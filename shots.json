@@ -1,0 +1,6 @@
+[
+  { "name": "1-cover.jpg", "query": "?shot=cover&layout=classic5&size=square&grade=vice-sunset&title=Vice%20Panels", "w": 1080, "h": 1080 },
+  { "name": "2-editor.jpg", "query": "?shot=editor&layout=diagonal4&size=square&grade=neon-noir&title=Vice%20Panels", "w": 1280, "h": 720 },
+  { "name": "3-portrait.jpg", "query": "?shot=cover&layout=grid6&size=portrait&grade=chrome-heat&title=Vice%20Panels", "w": 864, "h": 1080 },
+  { "name": "4-wide.jpg", "query": "?shot=cover&layout=classic5&size=widescreen&grade=palm-pastel&title=Vice%20Panels", "w": 1280, "h": 720 }
+]

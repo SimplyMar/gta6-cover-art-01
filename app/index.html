@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vice Panels</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<main class="app">
+  <section class="controls">
+    <h1>Vice Panels</h1>
+    <p class="tag">A coastal-noir multi-panel cover studio.</p>
+
+    <div class="field-row">
+      <label>Layout
+        <select id="layout"></select>
+      </label>
+      <label>Canvas size
+        <select id="size"></select>
+      </label>
+    </div>
+
+    <p id="selectedLabel" class="selected-label">Editing panel 1</p>
+
+    <div class="field-row">
+      <label>Photo upload <input id="photo" type="file" accept="image/*"></label>
+    </div>
+    <div class="field-row samples">
+      <span>Sample art:</span>
+      <button type="button" data-sample="boulevard">Boulevard</button>
+      <button type="button" data-sample="pier">Pier</button>
+    </div>
+
+    <label>Zoom
+      <input id="zoom" type="range" min="1" max="3" step="0.01" value="1">
+    </label>
+    <div class="field-row">
+      <label>Pan X <input id="panX" type="range" min="-1" max="1" step="0.01" value="0"></label>
+      <label>Pan Y <input id="panY" type="range" min="-1" max="1" step="0.01" value="0"></label>
+    </div>
+
+    <div class="field-row">
+      <label>Color grade
+        <select id="grade"></select>
+      </label>
+      <button id="applyAllGrade" type="button" class="ghost">Apply to all panels</button>
+    </div>
+
+    <label>Title <input id="title" type="text" maxlength="40" value="VICE PANELS"></label>
+    <label>Subtitle <input id="subtitle" type="text" maxlength="60" value="Coastal Noir Edition"></label>
+    <label>Emblem badge <input id="emblem" type="text" maxlength="4" value="VP"></label>
+
+    <button id="export" type="button" class="primary">Export PNG</button>
+    <p id="status" role="status"></p>
+  </section>
+
+  <section class="stage">
+    <canvas id="cover" width="1080" height="1080" aria-label="The cover art"></canvas>
+  </section>
+</main>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
