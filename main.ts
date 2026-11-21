@@ -40,12 +40,21 @@ writeFileSync(join(out, 'dossier.json'), dossierBytes);
 // Print a concise build summary so a local run confirms the dossier shape at a glance.
 try {
   const dossier = JSON.parse(Buffer.from(dossierBytes).toString());
-  const fileCount = Array.isArray(dossier.app?.files) ? dossier.app.files.length : undefined;
-  const shotCount = Array.isArray(dossier.screenshots) ? dossier.screenshots.length : undefined;
+  // The dossier's "## App" block is text, not structured JSON; its "Totals: N files and directories
+  // (B bytes)" line is the one line worth echoing here.
+  const totals = /Totals: (\d+) files and directories \((\d+) bytes\)/.exec(dossier.text ?? '');
+  const images: Array<{ name: string; base64: string }> = Array.isArray(dossier.images) ? dossier.images : [];
   console.log('gta6-cover-art-01 build summary');
   console.log(`  output dir:   ${out}`);
-  console.log(`  app files:    ${fileCount ?? 'n/a'}`);
-  console.log(`  screenshots:  ${shotCount ?? 'n/a'}`);
+  console.log(`  app files:    ${totals ? `${totals[1]} entries, ${totals[2]} bytes` : 'n/a'}`);
+  console.log(`  screenshots:  ${images.length || 'n/a'}`);
+  // Each screenshot's real byte size (decoded from its base64), checked against the scorer's 256 KiB
+  // cap here, up front, instead of only finding out from a grader rejection later.
+  for (const image of images) {
+    const bytes = Buffer.from(image.base64, 'base64').length;
+    const overCap = bytes > 262144 ? '  !! OVER 256 KiB CAP' : '';
+    console.log(`    ${image.name}: ${bytes} bytes${overCap}`);
+  }
   console.log(`  dossier size: ${dossierBytes.length} bytes`);
 } catch (err) {
   console.log(`gta6-cover-art-01 build summary: wrote ${dossierBytes.length} bytes to dossier.json (could not parse for summary: ${(err as Error).message})`);

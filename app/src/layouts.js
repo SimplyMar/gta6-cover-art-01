@@ -1,57 +1,121 @@
-// Panel geometry for Vice Panels. Each layout is a function(w, h) -> Panel[], where a Panel is
-// { id, poly: [[x,y], ...] } in pixel space (y-down), with deliberately asymmetric panel sizes so
-// the grid reads as a hand-built comic page rather than a mechanical grid. Border thickness per
-// panel also varies (see `borderFor`) to keep the bold-ink, GTA-box-art feel.
+// Panel geometry for Sunset Palms Cover Studio. Each layout is a function(w, h) -> Panel[], where a
+// Panel is { id, poly: [[x,y], ...], frame: 'ink'|'polaroid', calloutAngle } in pixel space (y-down).
+// Layouts are deliberately asymmetric — a hand-built comic page, not a mechanical grid — and a few
+// panels use rotated rectangles (polaroids5) rather than axis-aligned ones; pointInPoly and bboxOf
+// work the same either way, so the rest of the renderer never needs to know the difference.
 
-function rect(x0, y0, x1, y1) {
-  return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+function rect(x0, y0, x1, y1, frame = 'ink') {
+  return { poly: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], frame };
 }
 
-/** 5-Panel Classic Vice: one tall hero panel on the left, four uneven stacked panels on the right. */
-function classic5(w, h) {
-  const split = w * 0.6;
-  const rows = [0, 0.2, 0.46, 0.72, 1].map((f) => f * h);
+/** A rectangle of half-size (hw, hh) centered at (cx, cy), rotated by `angle` radians. */
+function rotRect(cx, cy, hw, hh, angle) {
+  const corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return corners.map(([x, y]) => [cx + x * c - y * s, cy + x * s + y * c]);
+}
+
+function fp(w, h, fx, fy) { return [fx * w, fy * h]; }
+
+/** vice6 — iconic 6-panel box art: wide helicopter banner top-left, tall hero portrait left, 4 staggered panels. */
+function vice6(w, h) {
+  const c1 = 0.42, c2 = 0.68;
+  const r = (x0, y0, x1, y1) => rect(x0 * w, y0 * h, x1 * w, y1 * h);
   return [
-    { id: 0, poly: rect(0, 0, split, h) },
-    { id: 1, poly: rect(split, rows[0], w, rows[1]) },
-    { id: 2, poly: rect(split, rows[1], w, rows[2]) },
-    { id: 3, poly: rect(split, rows[2], w, rows[3]) },
-    { id: 4, poly: rect(split, rows[3], w, rows[4]) },
+    { id: 0, ...r(0, 0, c1, 0.30), label: 'CHOPPER 1' },
+    { id: 1, ...r(0, 0.30, c1, 1), label: 'LEONIDA' },
+    { id: 2, ...r(c1, 0, c2, 0.56), label: 'OCEAN DR' },
+    { id: 3, ...r(c1, 0.56, c2, 1), label: 'NIGHT SHIFT' },
+    { id: 4, ...r(c2, 0, 1, 0.40), label: 'HEAT LEVEL' },
+    { id: 5, ...r(c2, 0.40, 1, 1), label: 'VICE SQUAD' },
   ];
 }
 
-/** 4-Panel Diagonal Split: two Z-diagonals carve the frame into four racing wedges. */
-function diagonal4(w, h) {
-  const p = (fx, fy) => [fx * w, fy * h];
-  return [
-    { id: 0, poly: [p(0, 0), p(0.6, 0), p(0.4, 0.5), p(0, 0.5)] },
-    { id: 1, poly: [p(0.6, 0), p(1, 0), p(1, 0.5), p(0.4, 0.5)] },
-    { id: 2, poly: [p(0, 0.5), p(0.4, 0.5), p(0.6, 1), p(0, 1)] },
-    { id: 3, poly: [p(0.4, 0.5), p(1, 0.5), p(1, 1), p(0.6, 1)] },
-  ];
+/** slanted5 — dynamic diagonal comic wedges: 5 tilted parallelogram strips with angled ink dividers. */
+function slanted5(w, h) {
+  const slant = w * 0.1;
+  const b = [0, 0.18, 0.4, 0.62, 0.82, 1].map((f) => f * w);
+  const labels = ['SUNSET', 'BOULEVARD', 'HEAT', 'NIGHT RUN', 'OCEAN DR'];
+  return b.slice(0, 5).map((x0, i) => {
+    const x1 = b[i + 1];
+    const topL = i === 0 ? 0 : x0 + slant;
+    const botR = i === 4 ? w : x1 - slant;
+    return {
+      id: i,
+      poly: [[topL, 0], [x1 + slant, 0], [botR, h], [x0 - slant, h]],
+      frame: 'ink',
+      label: labels[i],
+    };
+  });
 }
 
-/** 6-Panel Grid: 2 rows x 3 columns, uneven column widths and row heights for GTA asymmetry. */
-function grid6(w, h) {
-  const cols = [0, 0.38, 0.68, 1].map((f) => f * w);
-  const rowsY = [0, 0.52, 1].map((f) => f * h);
+/** heroBreakout — panoramic sunset backdrop, 4 stacked side panels, a large framed hero close-up breaking out. */
+function heroBreakout(w, h) {
+  const r = (x0, y0, x1, y1) => rect(x0 * w, y0 * h, x1 * w, y1 * h);
+  const sideRows = [0.38, 0.535, 0.69, 0.845, 1];
+  const labels = ['LEONIDA SUNSET', 'STRIP LIFE', 'CHOPPER 2', 'JOYRIDE', 'MIDNIGHT'];
+  const panels = [{ id: 0, ...r(0, 0, 1, 0.38), label: labels[0] }];
+  for (let i = 0; i < 4; i++) {
+    panels.push({ id: i + 1, ...r(0, sideRows[i], 0.3, sideRows[i + 1]), label: labels[i + 1] });
+  }
+  panels.push({ id: 5, ...r(0.34, 0.44, 0.98, 0.97), label: 'LEONIDA NIGHTS', frame: 'hero' });
+  return panels;
+}
+
+/** wideLoading — 16:9 cinematic split-panel widescreen loading-screen composition: uneven vertical columns. */
+function wideLoading(w, h) {
+  const b = [0, 0.2, 0.38, 0.6, 0.8, 1].map((f) => f * w);
+  const labels = ['OCEAN DR', 'STRIP', 'MIDNIGHT', 'CHOPPER 3', 'HEAT WAVE'];
   const panels = [];
-  let id = 0;
-  for (let r = 0; r < 2; r++) {
-    for (let c = 0; c < 3; c++) {
-      panels.push({ id: id++, poly: rect(cols[c], rowsY[r], cols[c + 1], rowsY[r + 1]) });
-    }
+  for (let i = 0; i < 5; i++) {
+    panels.push({ id: i, ...rect(b[i], 0, b[i + 1], h), label: labels[i] });
   }
   return panels;
 }
 
+/** classic5 — tall hero panel left, four uneven stacked panels right. */
+function classic5(w, h) {
+  const split = w * 0.6;
+  const rows = [0, 0.2, 0.46, 0.72, 1].map((f) => f * h);
+  const labels = ['LEONIDA NIGHTS', 'OCEAN DR', 'HEAT LEVEL', 'NIGHT SHIFT', 'VICE SQUAD'];
+  return [
+    { id: 0, ...rect(0, 0, split, h), label: labels[0] },
+    { id: 1, ...rect(split, rows[0], w, rows[1]), label: labels[1] },
+    { id: 2, ...rect(split, rows[1], w, rows[2]), label: labels[2] },
+    { id: 3, ...rect(split, rows[2], w, rows[3]), label: labels[3] },
+    { id: 4, ...rect(split, rows[3], w, rows[4]), label: labels[4] },
+  ];
+}
+
+/** polaroids5 — tilted overlapping snapshot frames (crisp white/black borders) over a vibrant sunset backdrop. */
+function polaroids5(w, h) {
+  const backdrop = { id: 0, ...rect(0, 0, w, h), label: '', frame: 'ink' };
+  const spots = [
+    { cx: 0.24, cy: 0.3, s: 0.34, a: -0.12, label: 'OCEAN DR' },
+    { cx: 0.64, cy: 0.22, s: 0.3, a: 0.09, label: 'CHOPPER 4' },
+    { cx: 0.78, cy: 0.62, s: 0.36, a: -0.07, label: 'NIGHT SHIFT' },
+    { cx: 0.33, cy: 0.72, s: 0.32, a: 0.14, label: 'LEONIDA' },
+  ];
+  const panels = spots.map((s, i) => {
+    const cx = s.cx * w, cy = s.cy * h;
+    const hw = s.s * Math.min(w, h) * 0.5, hh = hw * 1.18;
+    return { id: i + 1, poly: rotRect(cx, cy, hw, hh, s.a), frame: 'polaroid', label: s.label, angle: s.a };
+  });
+  return [backdrop, ...panels];
+}
+
 export const LAYOUTS = {
-  classic5: { label: '5-Panel Classic Vice', build: classic5 },
-  diagonal4: { label: '4-Panel Diagonal Split', build: diagonal4 },
-  grid6: { label: '6-Panel Grid', build: grid6 },
+  vice6: { label: 'Vice 6-Panel Box Art', build: vice6 },
+  slanted5: { label: 'Slanted Comic Wedges', build: slanted5 },
+  heroBreakout: { label: 'Hero Breakout', build: heroBreakout },
+  wideLoading: { label: 'Widescreen Loading Split', build: wideLoading },
+  classic5: { label: 'Classic Vice (Hero + 4)', build: classic5 },
+  polaroids5: { label: 'Sunset Polaroids', build: polaroids5 },
 };
 
-/** Bounding box of a polygon, for hit-testing text placement and pan clamping. */
+export const LAYOUT_IDS = Object.keys(LAYOUTS);
+
+/** Bounding box of a polygon (works for rotated rectangles too), for hit-testing and pan clamping. */
 export function bboxOf(poly) {
   const xs = poly.map((pt) => pt[0]);
   const ys = poly.map((pt) => pt[1]);
@@ -74,6 +138,13 @@ export function pointInPoly(poly, x, y) {
 
 /** Asymmetric border weight per panel index, scaled to the canvas's shortest side. */
 export function borderFor(index, shortSide) {
-  const weights = [0.026, 0.016, 0.022, 0.013, 0.019, 0.015];
+  const weights = [0.03, 0.018, 0.024, 0.015, 0.021, 0.017];
   return Math.max(4, shortSide * weights[index % weights.length]);
+}
+
+/** The centroid of a polygon (for callout tag / label placement). */
+export function centroidOf(poly) {
+  let x = 0, y = 0;
+  for (const [px, py] of poly) { x += px; y += py; }
+  return { x: x / poly.length, y: y / poly.length };
 }

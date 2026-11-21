@@ -1,6 +1,6 @@
 [
-  { "name": "1-cover.jpg", "query": "?shot=cover&layout=classic5&size=square&grade=vice-sunset&title=Vice%20Panels", "w": 1080, "h": 1080 },
-  { "name": "2-editor.jpg", "query": "?shot=editor&layout=diagonal4&size=square&grade=neon-noir&title=Vice%20Panels", "w": 1280, "h": 720 },
-  { "name": "3-portrait.jpg", "query": "?shot=cover&layout=grid6&size=portrait&grade=chrome-heat&title=Vice%20Panels", "w": 864, "h": 1080 },
-  { "name": "4-wide.jpg", "query": "?shot=cover&layout=classic5&size=widescreen&grade=palm-pastel&title=Vice%20Panels", "w": 1280, "h": 720 }
+  { "name": "1-cover.jpg", "query": "?shot=cover&layout=vice6&size=widescreen&grade=vice-sunset&title=SUNSET%20PALMS&subtitle=Leonida%20Nights", "w": 1280, "h": 720 },
+  { "name": "2-editor.jpg", "query": "?shot=editor&layout=vice6&size=widescreen&grade=vice-sunset&title=SUNSET%20PALMS&subtitle=Leonida%20Nights", "w": 1280, "h": 800 },
+  { "name": "3-portrait.jpg", "query": "?shot=cover&layout=vice6&size=portrait&grade=vice-sunset&title=SUNSET%20PALMS&subtitle=Leonida%20Nights", "w": 1024, "h": 1280 },
+  { "name": "4-square.jpg", "query": "?shot=cover&layout=slanted5&size=square&grade=neon-coast&title=SUNSET%20PALMS&subtitle=Leonida%20Nights", "w": 1080, "h": 1080 }
 ]

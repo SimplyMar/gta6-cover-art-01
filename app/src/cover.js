@@ -1,10 +1,13 @@
-// Draws a Vice Panels cover: a set of asymmetric comic-style panels (photo or procedural fill, each
-// with its own pan/zoom/grade), bold black ink borders and gutters, a title/subtitle banner, and a
-// corner emblem badge. `drawCover(canvas, state)` renders at the canvas's own pixel size, so the same
-// function serves the live editor preview and the full-resolution PNG export.
+// The full high-resolution cover renderer: drawCover(canvas, state, options) draws every panel
+// (photo or procedural backdrop), the GTA-style asymmetric ink gutters and frame, the Poster Ink
+// illustration filter, the cinematic color grade + sky bloom, and every lettering/overlay layer —
+// shared by the live editor preview and the full-resolution PNG export, so what you see is what you
+// export. Pass { exportMode: true } (or render in ?shot=cover mode) to suppress the selection outline.
 
-import { LAYOUTS, bboxOf, borderFor } from './layouts.js';
-import { GRADES, paintGradeOverlay } from './filters.js';
+import { LAYOUTS, bboxOf, borderFor, centroidOf } from './layouts.js';
+import { GRADES, applyGrade, paintSkyBloom } from './grades.js';
+import { applyPosterInk } from './posterize.js';
+import { drawTitle, drawSubtitle, drawCalloutTag, drawHeatBar, drawSeal, drawReviewStrip, drawBillingBlock } from './typography.js';
 
 const PALETTES = [
   ['#ff5e62', '#2b1838', '#ffb347'],
@@ -24,7 +27,7 @@ function seededRandom(seed) {
   };
 }
 
-/** Procedural coastal-noir filler art, so every panel looks finished before any photo is loaded. */
+/** Procedural Leonida sunset filler art, so every panel looks finished before any photo is loaded. */
 function drawProcedural(ctx, x, y, w, h, index) {
   const palette = PALETTES[index % PALETTES.length];
   const rand = seededRandom(index * 97 + 13);
@@ -35,7 +38,6 @@ function drawProcedural(ctx, x, y, w, h, index) {
   ctx.fillStyle = grad;
   ctx.fillRect(x, y, w, h);
 
-  // Sun / moon disc.
   const sunR = Math.min(w, h) * (0.18 + rand() * 0.08);
   const sunX = x + w * (0.3 + rand() * 0.4);
   const sunY = y + h * (0.32 + rand() * 0.18);
@@ -48,7 +50,6 @@ function drawProcedural(ctx, x, y, w, h, index) {
   ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
   ctx.fill();
 
-  // Horizon scanlines.
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
   ctx.lineWidth = Math.max(1, h * 0.006);
   const horizonY = y + h * 0.58;
@@ -61,7 +62,6 @@ function drawProcedural(ctx, x, y, w, h, index) {
     ctx.stroke();
   }
 
-  // Skyline silhouette.
   ctx.fillStyle = 'rgba(10,8,20,0.75)';
   ctx.beginPath();
   ctx.moveTo(x, y + h);
@@ -79,7 +79,6 @@ function drawProcedural(ctx, x, y, w, h, index) {
   ctx.closePath();
   ctx.fill();
 
-  // Palm silhouette accent on alternating panels.
   if (index % 3 !== 2) {
     const px = x + w * (index % 2 === 0 ? 0.14 : 0.86);
     const baseY = y + h;
@@ -109,7 +108,6 @@ function drawProcedural(ctx, x, y, w, h, index) {
     }
   }
 
-  // Grain / noise specks for texture.
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
   for (let i = 0; i < 40; i++) {
     const gx = x + rand() * w;
@@ -118,6 +116,7 @@ function drawProcedural(ctx, x, y, w, h, index) {
   }
 }
 
+/** Draws a photo cover-fit into (x, y, w, h), honoring zoom/pan (each ±1) and a horizontal flip. */
 function drawPhoto(ctx, img, x, y, w, h, panState) {
   const zoom = panState.zoom ?? 1;
   const baseScale = Math.max(w / img.naturalWidth, h / img.naturalHeight) * zoom;
@@ -127,13 +126,34 @@ function drawPhoto(ctx, img, x, y, w, h, panState) {
   const maxOffY = Math.max(0, (ph - h) / 2);
   const offX = Math.min(maxOffX, Math.max(-maxOffX, (panState.offsetX ?? 0) * maxOffX));
   const offY = Math.min(maxOffY, Math.max(-maxOffY, (panState.offsetY ?? 0) * maxOffY));
-  const dx = x + (w - pw) / 2 - offX;
-  const dy = y + (h - ph) / 2 - offY;
+  const dx = (w - pw) / 2 - offX;
+  const dy = (h - ph) / 2 - offY;
+  ctx.save();
+  ctx.translate(x, y);
+  if (panState.flipX) {
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+  }
   ctx.drawImage(img, dx, dy, pw, ph);
+  ctx.restore();
+}
+
+function clipPoly(ctx, poly) {
+  ctx.beginPath();
+  poly.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+  ctx.closePath();
+  ctx.clip();
+}
+
+function strokePoly(ctx, poly) {
+  ctx.beginPath();
+  poly.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+  ctx.closePath();
+  ctx.stroke();
 }
 
 /** Renders the full cover onto `canvas` (its own width/height define the output resolution). */
-export function drawCover(canvas, state) {
+export function drawCover(canvas, state, options = {}) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
@@ -146,51 +166,65 @@ export function drawCover(canvas, state) {
 
   const layout = LAYOUTS[state.layout] ?? LAYOUTS.classic5;
   const panels = layout.build(w, h);
+  const inkStrength = state.inkStrength ?? 0.6;
+  const posterizeLevels = state.posterizeLevels ?? 5;
+  const grain = state.grain ?? 0.25;
+  const inkEnabled = state.inkEnabled !== false;
 
   panels.forEach((panel, index) => {
     const box = bboxOf(panel.poly);
     const panState = state.panels[index] ?? {};
+    const gradeId = panState.grade ?? state.grade ?? 'vice-sunset';
 
     ctx.save();
-    ctx.beginPath();
-    panel.poly.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
-    ctx.closePath();
-    ctx.clip();
+    clipPoly(ctx, panel.poly);
 
-    const gradeId = panState.grade ?? 'vice-sunset';
-    ctx.filter = (GRADES[gradeId] ?? GRADES['vice-sunset']).filter;
-    if (panState.img) {
-      drawPhoto(ctx, panState.img, box.x, box.y, box.w, box.h, panState);
-    } else {
-      drawProcedural(ctx, box.x, box.y, box.w, box.h, index);
+    if (panel.frame === 'polaroid') {
+      // Crisp white polaroid card behind the photo, so the clipped photo reads as a tilted snapshot.
+      ctx.fillStyle = '#f7f4ec';
+      ctx.fillRect(box.x - 4, box.y - 4, box.w + 8, box.h + 8);
     }
-    ctx.filter = 'none';
-    paintGradeOverlay(ctx, gradeId, box.x, box.y, box.w, box.h);
+    const inset = panel.frame === 'polaroid' ? Math.min(box.w, box.h) * 0.06 : 0;
+    const pbox = { x: box.x + inset, y: box.y + inset * 0.6, w: box.w - inset * 2, h: box.h - inset * 1.9 };
+
+    if (panState.img) {
+      drawPhoto(ctx, panState.img, pbox.x, pbox.y, pbox.w, pbox.h, panState);
+    } else {
+      drawProcedural(ctx, pbox.x, pbox.y, pbox.w, pbox.h, index);
+    }
+    applyGrade(ctx, pbox.x, pbox.y, pbox.w, pbox.h, gradeId, panState.gradeStrength ?? 0.42);
+    if (inkEnabled) applyPosterInk(ctx, pbox.x, pbox.y, pbox.w, pbox.h, { inkStrength, posterizeLevels, grain });
     ctx.restore();
 
-    if (state.selectedPanel === index) {
+    if (state.selectedPanel === index && !options.exportMode) {
       ctx.save();
       ctx.setLineDash([shortSide * 0.012, shortSide * 0.01]);
       ctx.lineWidth = Math.max(2, shortSide * 0.006);
       ctx.strokeStyle = '#ffe066';
-      ctx.beginPath();
-      panel.poly.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
-      ctx.closePath();
-      ctx.stroke();
+      strokePoly(ctx, panel.poly);
       ctx.restore();
     }
   });
 
-  // Bold black ink borders over every panel seam, asymmetric per panel.
+  // Bold black ink borders over every panel seam, asymmetric per panel; polaroids get a thin black
+  // frame close to the card edge instead of a heavy comic gutter.
   panels.forEach((panel, index) => {
     ctx.save();
     ctx.lineJoin = 'miter';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = borderFor(index, shortSide);
-    ctx.beginPath();
-    panel.poly.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
-    ctx.closePath();
-    ctx.stroke();
+    if (panel.frame === 'polaroid') {
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = Math.max(2, shortSide * 0.004);
+    } else if (panel.frame === 'hero') {
+      ctx.strokeStyle = '#ffd36e';
+      ctx.lineWidth = borderFor(index, shortSide) * 1.3;
+      strokePoly(ctx, panel.poly);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = borderFor(index, shortSide) * 0.55;
+    } else {
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = borderFor(index, shortSide);
+    }
+    strokePoly(ctx, panel.poly);
     ctx.restore();
   });
 
@@ -201,87 +235,59 @@ export function drawCover(canvas, state) {
   ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
   ctx.restore();
 
+  if (state.skyBloom !== false) paintSkyBloom(ctx, w, h, state.grade ?? state.panels[0]?.grade ?? 'vice-sunset');
+
+  if (state.showCallouts !== false) {
+    panels.forEach((panel, index) => {
+      if (!panel.label) return;
+      const text = state.panels[index]?.label || panel.label;
+      const c = centroidOf(panel.poly);
+      const box = bboxOf(panel.poly);
+      const anchorY = panel.frame === 'polaroid' ? box.y + box.h * 0.84 : box.y + box.h * 0.14;
+      drawCalloutTag(ctx, c.x, anchorY, text, panel.angle ?? -0.07);
+    });
+  }
+
+  if (state.showHeat !== false) drawHeatBar(ctx, shortSide * 0.045, h - shortSide * 0.055, shortSide * 0.05, state.heat ?? 5);
+  if (state.showSeal !== false) drawSeal(ctx, w, h, state.sealText ?? 'SUNSET PALMS EDITION');
+  if (state.showReview !== false && state.reviewText) drawReviewStrip(ctx, 0, h * 0.04, w * 0.62, state.reviewText);
+
   drawTitleBlock(ctx, w, h, state);
-  drawEmblem(ctx, w, h, state);
+
+  if (state.showBilling !== false && state.billingText) drawBillingBlock(ctx, w, h, state.billingText);
 
   ctx.restore();
-}
-
-function fitText(ctx, text, maxWidth, startSize, weight = 800) {
-  let size = startSize;
-  ctx.font = `${weight} ${size}px 'Arial Black', Arial, sans-serif`;
-  while (ctx.measureText(text).width > maxWidth && size > 10) {
-    size -= 2;
-    ctx.font = `${weight} ${size}px 'Arial Black', Arial, sans-serif`;
-  }
-  return size;
 }
 
 function drawTitleBlock(ctx, w, h, state) {
-  const title = (state.title ?? '').trim().toUpperCase();
+  const title = (state.title ?? '').trim();
   const subtitle = (state.subtitle ?? '').trim();
   if (!title && !subtitle) return;
-
-  const bandH = h * (subtitle ? 0.2 : 0.14);
+  const bandH = h * (subtitle ? 0.24 : 0.16);
   const bandY = h - bandH;
+  ctx.save();
   const grad = ctx.createLinearGradient(0, bandY, 0, h);
   grad.addColorStop(0, 'rgba(0,0,0,0)');
-  grad.addColorStop(0.35, 'rgba(0,0,0,0.75)');
-  grad.addColorStop(1, 'rgba(0,0,0,0.92)');
-  ctx.save();
+  grad.addColorStop(0.35, 'rgba(0,0,0,0.72)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.9)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, bandY, w, bandH);
 
-  ctx.textAlign = 'center';
   if (title) {
-    const size = fitText(ctx, title, w * 0.88, h * 0.11);
-    ctx.font = `800 ${size}px 'Arial Black', Arial, sans-serif`;
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = size * 0.11;
-    ctx.lineJoin = 'round';
-    const ty = h - bandH * (subtitle ? 0.52 : 0.38);
-    ctx.strokeText(title, w / 2, ty);
-    const grd = ctx.createLinearGradient(0, ty - size, 0, ty);
-    grd.addColorStop(0, '#fff3c4');
-    grd.addColorStop(1, '#ff5e62');
-    ctx.fillStyle = grd;
-    ctx.fillText(title, w / 2, ty);
+    drawTitle(ctx, w, h, title, {
+      cx: w / 2,
+      baselineY: h - bandH * (subtitle ? 0.58 : 0.4),
+      maxWidth: w * 0.9,
+      size: h * 0.13,
+    });
   }
   if (subtitle) {
-    const size = fitText(ctx, subtitle.toUpperCase(), w * 0.7, h * 0.035, 600);
-    ctx.font = `600 ${size}px Arial, sans-serif`;
-    ctx.fillStyle = '#ffe066';
-    ctx.letterSpacing = `${size * 0.25}px`;
-    ctx.fillText(subtitle.toUpperCase(), w / 2, h - bandH * 0.12);
-    ctx.letterSpacing = '0px';
+    drawSubtitle(ctx, w, h, subtitle, {
+      cx: w / 2,
+      y: h - bandH * 0.16,
+      maxWidth: w * 0.75,
+      size: h * 0.05,
+    });
   }
-  ctx.restore();
-}
-
-function drawEmblem(ctx, w, h, state) {
-  const text = (state.emblem ?? '').trim().toUpperCase();
-  if (!text) return;
-  const r = Math.min(w, h) * 0.075;
-  const cx = w - r * 1.4;
-  const cy = r * 1.4;
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  grad.addColorStop(0, '#ffd36e');
-  grad.addColorStop(1, '#ff2e92');
-  ctx.fillStyle = grad;
-  ctx.fill();
-  ctx.lineWidth = r * 0.22;
-  ctx.strokeStyle = '#000000';
-  ctx.stroke();
-  ctx.fillStyle = '#000000';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const size = fitText(ctx, text, r * 1.5, r * 0.6);
-  ctx.font = `800 ${size}px 'Arial Black', Arial, sans-serif`;
-  ctx.fillText(text, cx, cy + size * 0.05);
-  ctx.textBaseline = 'alphabetic';
   ctx.restore();
 }

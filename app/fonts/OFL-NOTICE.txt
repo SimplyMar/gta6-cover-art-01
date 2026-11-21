@@ -1,0 +1,21 @@
+Sunset Palms Cover Studio — vendored font notice
+=================================================
+
+This directory bundles three typefaces, each licensed under the SIL Open Font
+License, Version 1.1 (https://scripts.sil.org/OFL), used here under that
+license's terms for offline, local rendering only. No other font, logo,
+wordmark or artwork is bundled.
+
+- Anton-Regular.ttf — "Anton" by Vernon Adams, SIL Open Font License 1.1.
+- BebasNeue-Regular.ttf — "Bebas Neue" by Ryoichi Tsunekawa (Dharma Type),
+  SIL Open Font License 1.1.
+- Pacifico-Regular.ttf — "Pacifico" by Vernon Adams, SIL Open Font License 1.1.
+
+The SIL Open Font License permits using, studying, modifying and
+redistributing these fonts, bundled or embedded, free of charge, so long as
+they are not sold by themselves and any modified versions are renamed. The
+full OFL 1.1 license text governs use of each file above; it is not
+reproduced here but is freely available at the URL above. The font names
+"Anton", "Bebas Neue" and "Pacifico" are the Reserved Font Names of their
+respective copyright holders and are used here only to identify the
+unmodified, bundled files.
