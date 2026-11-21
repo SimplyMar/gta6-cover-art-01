@@ -17,17 +17,42 @@ function rotRect(cx, cy, hw, hh, angle) {
 
 function fp(w, h, fx, fy) { return [fx * w, fy * h]; }
 
-/** vice6 — iconic 6-panel box art: wide helicopter banner top-left, tall hero portrait left, 4 staggered panels. */
+/** vice6 — iconic 6-panel box art: wide helicopter banner top-left, tall hero portrait left, 4 staggered
+ * panels. The two internal vertical seams (at c1, c2) carry a slight ~2.5 degree slant for dynamic
+ * crime-epic energy — the outer silhouette (x=0 and x=w) stays dead straight so the mosaic's outer edge
+ * remains a clean rectangle for the cinema keyline border to frame. Every panel becomes a trapezoid quad
+ * (not a plain rect) whose slanted left/right edges are literally the same seam line a neighboring panel
+ * shares, so the tiling stays perfectly flush with zero gaps or overlaps. */
 function vice6(w, h) {
   const c1 = 0.42, c2 = 0.68;
-  const r = (x0, y0, x1, y1) => rect(x0 * w, y0 * h, x1 * w, y1 * h);
+  const angle = (2.5 * Math.PI) / 180;
+  const shear = h * Math.tan(angle);
+  const colX = (f, y) => {
+    if (f <= 0 || f >= 1) return f * w;
+    const topX = f * w - shear / 2;
+    const botX = f * w + shear / 2;
+    return topX + (botX - topX) * (y / h);
+  };
+  const quad = (fx0, fy0, fx1, fy1, label) => {
+    const y0 = fy0 * h, y1 = fy1 * h;
+    return {
+      poly: [
+        [colX(fx0, y0), y0],
+        [colX(fx1, y0), y0],
+        [colX(fx1, y1), y1],
+        [colX(fx0, y1), y1],
+      ],
+      frame: 'ink',
+      label,
+    };
+  };
   return [
-    { id: 0, ...r(0, 0, c1, 0.30), label: 'CHOPPER 1' },
-    { id: 1, ...r(0, 0.30, c1, 1), label: 'HEAT LEVEL' },
-    { id: 2, ...r(c1, 0, c2, 0.56), label: 'OCEAN DR' },
-    { id: 3, ...r(c1, 0.56, c2, 1), label: 'LEONIDA' },
-    { id: 4, ...r(c2, 0, 1, 0.40), label: 'NIGHT SHIFT' },
-    { id: 5, ...r(c2, 0.40, 1, 1), label: 'VICE SQUAD' },
+    { id: 0, ...quad(0, 0, c1, 0.30, 'CHOPPER 1') },
+    { id: 1, ...quad(0, 0.30, c1, 1, 'HEAT LEVEL') },
+    { id: 2, ...quad(c1, 0, c2, 0.56, 'OCEAN DR') },
+    { id: 3, ...quad(c1, 0.56, c2, 1, 'LEONIDA') },
+    { id: 4, ...quad(c2, 0, 1, 0.40, 'NIGHT SHIFT') },
+    { id: 5, ...quad(c2, 0.40, 1, 1, 'VICE SQUAD') },
   ];
 }
 

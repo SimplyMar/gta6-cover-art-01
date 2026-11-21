@@ -7,7 +7,28 @@
 import { LAYOUTS, bboxOf, borderFor, photoBoxFor } from './layouts.js';
 import { GRADES, applyGrade, paintSkyBloom } from './grades.js';
 import { applyPosterInk } from './posterize.js';
-import { drawTitle, drawSubtitle, drawCalloutTag, drawHeatBar, drawSeal, drawReviewStrip, drawBillingBlock } from './typography.js';
+import { drawTitle, drawSubtitle, drawTaglineRibbon, drawCalloutTag, drawSeal, drawCinemaHeader, drawCinemaFooter } from './typography.js';
+
+// Dedicated cinema poster frame: a crisp dark-plum header strip and a dedicated billing footer strip,
+// both OUTSIDE the multi-panel photo mosaic, so neither ever collides with a panel photo.
+const HEADER_FRAC = 0.06;
+const FOOTER_FRAC = 0.095;
+
+/** The mosaic's own y-bounds within a `w` x `h` canvas, after reserving the header/footer strips. */
+export function mosaicBounds(w, h) {
+  const y0 = h * HEADER_FRAC;
+  const y1 = h - h * FOOTER_FRAC;
+  return { y0, y1, h: y1 - y0 };
+}
+
+/** Builds `layoutId`'s panels against the shrunk mosaic height, then offsets every polygon down by the
+ * header strip's height — the single source of panel geometry shared by drawCover's own render pass and
+ * every click-hit-test / drag-pan / face-anchor call site in main.js, so they always agree. */
+export function buildMosaicPanels(layoutId, w, h) {
+  const layout = LAYOUTS[layoutId] ?? LAYOUTS.classic5;
+  const { y0, h: mosaicH } = mosaicBounds(w, h);
+  return layout.build(w, mosaicH).map((p) => ({ ...p, poly: p.poly.map(([px, py]) => [px, py + y0]) }));
+}
 
 const PALETTES = [
   ['#ff5e62', '#2b1838', '#ffb347'],
@@ -164,10 +185,15 @@ export function drawCover(canvas, state, options = {}) {
   ctx.fillStyle = '#05040a';
   ctx.fillRect(0, 0, w, h);
 
-  const layout = LAYOUTS[state.layout] ?? LAYOUTS.classic5;
-  const panels = layout.build(w, h);
-  const inkStrength = state.inkStrength ?? 0.6;
-  const posterizeLevels = state.posterizeLevels ?? 6;
+  // Reserve the top 6% / bottom 9.5% cinema header + billing footer strips OUTSIDE the photo mosaic —
+  // see buildMosaicPanels/mosaicBounds, shared with main.js so click-hit-testing, drag-pan, and
+  // face-anchor math always agree with what's actually drawn here.
+  const { y0: mosaicY0, y1: mosaicY1, h: mosaicH } = mosaicBounds(w, h);
+  const headerH = mosaicY0;
+  const footerH = h - mosaicY1;
+  const panels = buildMosaicPanels(state.layout, w, h);
+  const inkStrength = state.inkStrength ?? 0.3;
+  const posterizeLevels = state.posterizeLevels ?? 10;
   const grain = state.grain ?? 0.25;
   const inkEnabled = state.inkEnabled !== false;
 
@@ -205,7 +231,7 @@ export function drawCover(canvas, state, options = {}) {
     } else {
       drawProcedural(octx, drawBox.x, drawBox.y, drawBox.w, drawBox.h, index);
     }
-    applyGrade(octx, 0, 0, off.width, off.height, gradeId, panState.gradeStrength ?? 0.42);
+    applyGrade(octx, 0, 0, off.width, off.height, gradeId, panState.gradeStrength ?? 0.36);
     if (inkEnabled) applyPosterInk(octx, 0, 0, off.width, off.height, { inkStrength, posterizeLevels, grain });
     ctx.drawImage(off, box.x, box.y);
     ctx.restore();
@@ -242,29 +268,46 @@ export function drawCover(canvas, state, options = {}) {
     ctx.restore();
   });
 
-  // Outer frame.
+  // vice6's inner seams get a crisp white/cream 2px hairline nested inside the thick dark gutter, drawn
+  // right on top of the black border stroke above (the black is wider, so the cream line reads as a
+  // crisp accent centered within it) so the mosaic pops with dynamic crime-epic energy.
+  if (state.layout === 'vice6') {
+    panels.forEach((panel) => {
+      if (panel.frame === 'polaroid') return;
+      ctx.save();
+      ctx.lineJoin = 'miter';
+      ctx.strokeStyle = 'rgba(245,240,225,0.92)';
+      ctx.lineWidth = Math.max(1.5, shortSide * 0.002);
+      strokePoly(ctx, panel.poly);
+      ctx.restore();
+    });
+  }
+
+  // Sharp 1.5px warm-gold outer keyline border framing the photo mosaic — distinct from the header and
+  // footer strips, which sit outside it.
   ctx.save();
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = shortSide * 0.028;
-  ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
+  ctx.strokeStyle = '#e7b65c';
+  ctx.lineWidth = Math.max(1.5, shortSide * 0.0014);
+  ctx.strokeRect(ctx.lineWidth / 2, mosaicY0 + ctx.lineWidth / 2, w - ctx.lineWidth, mosaicH - ctx.lineWidth);
   ctx.restore();
 
-  if (state.skyBloom !== false) paintSkyBloom(ctx, w, h, state.grade ?? state.panels[0]?.grade ?? 'vice-sunset');
+  if (state.skyBloom !== false) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, mosaicY0, w, mosaicH);
+    ctx.clip();
+    paintSkyBloom(ctx, w, h, state.grade ?? state.panels[0]?.grade ?? 'vice-sunset');
+    ctx.restore();
+  }
 
   if (state.showCallouts !== false) {
     // Every callout tag is pinned to the bottom-left corner of its own panel, inset by a fixed margin —
-    // never the top (where the critic review strip and edition seal both live) and never low enough to
-    // collide with the title block's actual rendered glyphs (which rise well above its gradient band —
-    // see titleSafeTop) or the heat bar, both of which sit flush to the overall canvas's bottom edge.
-    // Clamp each tag's y upward, clearing whichever of those it would overlap.
+    // never the top (where the edition seal lives) and never low enough to collide with the title
+    // block's actual rendered glyphs (which rise well above its gradient band — see titleSafeTop), both
+    // of which sit flush to the mosaic's own bottom edge (not the whole canvas, now that the billing
+    // footer strip is reserved separately). Clamp each tag's y upward, clearing whichever it would overlap.
     const inset = Math.max(10, shortSide * 0.012);
-    const safeTop = titleSafeTop(w, h, state);
-    const showHeatBar = state.showHeat !== false;
-    const starSize = shortSide * 0.05;
-    const heatCx = shortSide * 0.045, heatCy = h - shortSide * 0.055;
-    const heatLeft = heatCx - starSize * 0.5;
-    const heatRight = heatCx + starSize * 1.08 * 4 + starSize * 0.6;
-    const heatTop = heatCy - starSize * 0.7;
+    const safeTop = titleSafeTop(w, mosaicY1, state);
 
     panels.forEach((panel, index) => {
       if (!panel.label) return;
@@ -273,84 +316,99 @@ export function drawCover(canvas, state, options = {}) {
       const tagX = box.x + inset;
       let tagY = box.y + box.h - inset;
       if (Number.isFinite(safeTop)) tagY = Math.min(tagY, safeTop - inset);
-      if (showHeatBar && box.x < heatRight && box.x + box.w > heatLeft) {
-        tagY = Math.min(tagY, heatTop - inset);
-      }
       tagY = Math.max(tagY, box.y + inset + 20); // never climb above its own panel's top edge
       drawCalloutTag(ctx, tagX, tagY, text, panel.angle ?? -0.07);
     });
   }
 
-  if (state.showSeal !== false) drawSeal(ctx, w, h, state.sealText ?? 'SUNSET PALMS EDITION');
-  if (state.showReview !== false && state.reviewText) {
-    // Tucked cleanly inside the top-left panel rather than stretched across the canvas (which used to
-    // cross panel gutters), sized to fit its own measured text instead of a flat 62%-of-canvas guess.
-    const topLeft = bboxOf(panels[0].poly);
-    const stripInset = Math.max(10, shortSide * 0.014);
-    drawReviewStrip(ctx, topLeft.x + stripInset, topLeft.y + stripInset, topLeft.w - stripInset * 2, state.reviewText);
-  }
+  if (state.showSeal !== false) drawSeal(ctx, w, h, state.sealText ?? 'SUNSET PALMS EDITION', mosaicY0);
 
-  drawTitleBlock(ctx, w, h, state);
+  drawTitleBlock(ctx, w, mosaicY1, state);
 
-  // Drawn AFTER the title block so the heat bar's luminous gold stars render on top of the bottom title
-  // gradient (which fades to 90% black) instead of being obscured underneath it.
-  if (state.showHeat !== false) drawHeatBar(ctx, shortSide * 0.045, h - shortSide * 0.055, shortSide * 0.05, state.heat ?? 5);
+  // The dedicated cinema header + footer strips are drawn LAST, on top of everything else (mosaic,
+  // frame, title) — they occupy their own reserved bands outside the mosaic, so nothing above can ever
+  // bleed into or collide with them.
+  drawCinemaHeader(ctx, w, headerH, { reviewText: state.showReview !== false ? state.reviewText : '', heat: state.heat ?? 5 });
+  drawCinemaFooter(ctx, w, mosaicY1, footerH, {
+    heat: state.heat ?? 5,
+    showHeat: state.showHeat !== false,
+    billingLine1: state.showBilling !== false ? 'SUNSET PALMS PICTURES PRESENTS' : '',
+    billingLine2: state.showBilling !== false ? state.billingText : '',
+    barcodeSerial: state.barcodeSerial,
+  });
 
-  if (state.showBilling !== false && state.billingText) drawBillingBlock(ctx, w, h, state.billingText);
+  // Final outer black frame, traced over the whole poster (header + mosaic + footer) last, so the
+  // cinema box-cover silhouette reads as one crisp, continuous edge. Deliberately much thinner than the
+  // comic-gutter borders inside the mosaic — the header/footer strips are only 6%/9.5% of the canvas
+  // height, and the old heavy 0.028-weight frame ate visibly into their stars/pill/barcode content.
+  ctx.save();
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = Math.max(2, shortSide * 0.007);
+  ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
+  ctx.restore();
 
   ctx.restore();
 }
 
-/** How far the bottom title block's actual rendered glyphs reach above the canvas bottom — the Anton
- * title's ascenders (plus its drop shadow) rise well above its own semi-transparent gradient band, so
- * panel callout tags need to clear THIS line, not just the band's nominal top edge. Returns Infinity
- * when no title/subtitle is set (nothing to clear). Mirrors drawTitleBlock's own baselineY/size math. */
-function titleSafeTop(w, h, state) {
+/** How far the bottom title block's actual rendered glyphs reach above `floorY` (the bottom of the
+ * photo mosaic, not necessarily the whole canvas) — the Anton title's ascenders (plus its drop shadow)
+ * rise well above its own semi-transparent gradient band, so panel callout tags need to clear THIS
+ * line, not just the band's nominal top edge. Returns Infinity when no title/subtitle is set (nothing
+ * to clear). Mirrors drawTitleBlock's own baselineY/size math. */
+function titleSafeTop(w, floorY, state) {
   const title = (state.title ?? '').trim();
   const subtitle = (state.subtitle ?? '').trim();
   if (!title && !subtitle) return Infinity;
-  const bandH = h * (subtitle ? 0.24 : 0.16);
-  const clearance = h * 0.0278;
   if (title) {
-    const baselineY = h - bandH * (subtitle ? 0.58 : 0.4) - clearance;
-    return baselineY - h * 0.13 * 0.95; // Anton ascent (~0.78 of size) plus a safety margin
+    const baselineY = floorY - floorY * 0.17;
+    return baselineY - floorY * 0.182 * 0.95; // Anton ascent (~0.78 of size) plus a safety margin
   }
-  const subY = h - bandH * 0.16 - clearance;
-  return subY - h * 0.05 * 1.3; // Pacifico's glow + ascent, centered on subY
+  const subY = floorY - floorY * 0.105;
+  return subY - floorY * 0.065 * 1.3; // Pacifico's glow + ascent, centered on subY
 }
 
-function drawTitleBlock(ctx, w, h, state) {
+/** Draws the heroic title/subtitle/tagline block, anchored to `floorY` — the bottom of the photo
+ * mosaic — rather than the full canvas height, so it always sits over the photo mosaic itself and never
+ * intrudes into the dedicated billing footer strip below it. */
+function drawTitleBlock(ctx, w, floorY, state) {
   const title = (state.title ?? '').trim();
   const subtitle = (state.subtitle ?? '').trim();
+  const tagline = (state.tagline ?? 'EVERY COAST HAS A PRICE').trim();
   if (!title && !subtitle) return;
-  const bandH = h * (subtitle ? 0.24 : 0.16);
-  const bandY = h - bandH;
+  const bandH = floorY * (tagline ? 0.38 : subtitle ? 0.28 : 0.2);
+  const bandY = floorY - bandH;
   ctx.save();
-  const grad = ctx.createLinearGradient(0, bandY, 0, h);
+  const grad = ctx.createLinearGradient(0, bandY, 0, floorY);
   grad.addColorStop(0, 'rgba(0,0,0,0)');
-  grad.addColorStop(0.35, 'rgba(0,0,0,0.72)');
+  grad.addColorStop(0.3, 'rgba(0,0,0,0.72)');
   grad.addColorStop(1, 'rgba(0,0,0,0.9)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, bandY, w, bandH);
 
-  // Lift both lines a touch off the very bottom edge so Leonida Nights' descenders get clean dark
-  // breathing room above the billing credits line instead of touching it (proportional to canvas size,
-  // ~20px at a 720-tall preview).
-  const clearance = h * 0.0278;
   if (title) {
-    drawTitle(ctx, w, h, title, {
+    // Bold condensed display, ~1.4x bigger than the original box-art title, anchored across the
+    // lower-center with zero face collisions (clamped against titleSafeTop by the callout-tag logic).
+    drawTitle(ctx, w, floorY, title, {
       cx: w / 2,
-      baselineY: h - bandH * (subtitle ? 0.58 : 0.4) - clearance,
-      maxWidth: w * 0.9,
-      size: h * 0.13,
+      baselineY: floorY - floorY * 0.17,
+      maxWidth: w * 0.94,
+      size: floorY * 0.182,
     });
   }
   if (subtitle) {
-    drawSubtitle(ctx, w, h, subtitle, {
+    drawSubtitle(ctx, w, floorY, subtitle, {
       cx: w / 2,
-      y: h - bandH * 0.16 - clearance,
-      maxWidth: w * 0.75,
-      size: h * 0.05,
+      y: floorY - floorY * 0.105,
+      maxWidth: w * 0.8,
+      size: floorY * 0.065,
+    });
+  }
+  if (tagline) {
+    drawTaglineRibbon(ctx, w, floorY, tagline, {
+      cx: w / 2,
+      y: floorY - floorY * 0.032,
+      maxWidth: w * 0.56,
+      size: floorY * 0.026,
     });
   }
   ctx.restore();

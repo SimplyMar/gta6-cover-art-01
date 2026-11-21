@@ -25,7 +25,11 @@
     <p id="selectedLabel" class="selected-label">Editing panel 1</p>
 
     <div class="row">
-      <label class="grow">Photo upload (multi-file ok) <input id="photo" type="file" accept="image/*" multiple></label>
+      <label class="grow upload-wrap">
+        <span class="upload-btn">⬆ Upload Photos</span>
+        <span class="upload-hint">multi-file ok</span>
+        <input id="photo" type="file" accept="image/*" multiple class="visually-hidden-file">
+      </label>
     </div>
     <div class="row samples">
       <span>Drop onto canvas, or pick a sample:</span>
@@ -47,8 +51,8 @@
       <label>Grain <input id="grain" type="range" min="0" max="1" step="0.01" value="0.25"></label>
       <label>Pan X <input id="panX" type="range" min="-1" max="1" step="0.01" value="0"></label>
       <label>Pan Y <input id="panY" type="range" min="-1" max="1" step="0.01" value="0"></label>
-      <label>Ink strength <input id="ink" type="range" min="0" max="1" step="0.01" value="0.6"></label>
-      <label>Posterize <input id="posterize" type="range" min="2" max="8" step="1" value="5"></label>
+      <label>Ink strength <input id="ink" type="range" min="0" max="1" step="0.01" value="0.3"></label>
+      <label>Posterize <input id="posterize" type="range" min="2" max="10" step="1" value="10"></label>
     </div>
 
     <div class="row">

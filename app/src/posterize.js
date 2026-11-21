@@ -61,8 +61,8 @@ function liftVibrance(r, g, b, l, amount) {
  *   grain            0..1, subtle clean film-grain opacity (no halftone dots).
  */
 export function applyPosterInk(ctx, x, y, w, h, opts = {}) {
-  const inkStrength = opts.inkStrength ?? 0.6;
-  const levels = Math.max(2, Math.min(8, Math.round(opts.posterizeLevels ?? 6)));
+  const inkStrength = opts.inkStrength ?? 0.3;
+  const levels = Math.max(2, Math.min(10, Math.round(opts.posterizeLevels ?? 10)));
   const grain = opts.grain ?? 0.25;
   const iw = Math.max(1, Math.round(w));
   const ih = Math.max(1, Math.round(h));
@@ -109,15 +109,33 @@ export function applyPosterInk(ctx, x, y, w, h, opts = {}) {
       const qG = origG * scale;
       const qB = origB * scale + (bandT < 0.4 ? -5 : bandT > 0.8 ? 6 : 0);
 
-      // Soft cel-shade: blend the quantized bands with the smooth original luminance rather than
-      // committing fully to flat bands, so the paint reads as graded, soft-shaded key art instead of
-      // a harsh poster cutout — then lift vibrance a touch in the midtones so sunset skies and faces
-      // glow warmly instead of turning muddy gray.
-      let r = qR * 0.55 + origR * 0.45;
-      let g = qG * 0.55 + origG * 0.45;
-      let b = qB * 0.55 + origB * 0.45;
-      const blendedLuma = lumaOf(r, g, b);
+      // Subtle painted smoothing: blend only 25% cel-shade bands with 75% the vibrant, crisp original
+      // image — a light painterly touch rather than the old heavier 55/45 mix, which read as washed-out
+      // muddy posterization. This keeps skin tones, sunglasses, sunset skies, and neon reflections rich,
+      // sharp, and luminous instead of flattened.
+      let r = qR * 0.25 + origR * 0.75;
+      let g = qG * 0.25 + origG * 0.75;
+      let b = qB * 0.25 + origB * 0.75;
+
+      // +18% golden-hour warmth: a gentle push toward amber in the reds/greens and a pull away from
+      // blue, applied before vibrance/contrast so it reads as a warm key-light source, not a color cast.
+      const warmth = 0.18;
+      r += warmth * 34;
+      g += warmth * 10;
+      b -= warmth * 26;
+
+      let blendedLuma = lumaOf(r, g, b);
       [r, g, b] = liftVibrance(r, g, b, blendedLuma, 0.14);
+
+      // Subtle S-curve contrast: pushes midtones outward (punchier blacks/whites, less flat/muddy) while
+      // preserving hue, by rescaling r/g/b around the same luma-ratio trick the cel-shade banding above
+      // already uses (never touching hue/saturation directly).
+      blendedLuma = Math.max(1, lumaOf(r, g, b));
+      const t = blendedLuma / 255;
+      const curvedT = t + (t - 0.5) * 0.18 * (1 - Math.abs(t - 0.5) * 2);
+      const curvedLuma = Math.max(1, Math.min(255, curvedT * 255));
+      const cScale = curvedLuma / blendedLuma;
+      r *= cScale; g *= cScale; b *= cScale;
 
       // Sobel edge magnitude from the luma grid, clamped to the region's border.
       const xm = Math.max(0, xx - 1), xp = Math.min(iw - 1, xx + 1);

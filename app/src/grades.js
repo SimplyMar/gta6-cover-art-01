@@ -51,7 +51,7 @@ function mixStop(orig, stop, amount) {
  * Each pixel's luma places it on the shadow->mid->highlight curve; the stop color is screened in at
  * `strength` while the original luma is kept (so detail and skin tone never flatten to a swatch).
  */
-export function applyGrade(ctx, x, y, w, h, gradeId, strength = 0.42) {
+export function applyGrade(ctx, x, y, w, h, gradeId, strength = 0.36) {
   const grade = GRADES[gradeId] ?? GRADES['vice-sunset'];
   const iw = Math.max(1, Math.round(w));
   const ih = Math.max(1, Math.round(h));

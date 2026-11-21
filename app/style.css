@@ -105,7 +105,41 @@ input[type=text], select {
 }
 
 input[type=range] { accent-color: #ff5e62; width: 100%; }
-input[type=file] { font: inherit; color: #d8d0e8; font-size: 11px; }
+
+/* A sleek bespoke "Upload Photos" button wrapping a visually-hidden native file input, instead of the
+   raw default browser "Choose files / No file chosen" control. */
+.upload-wrap {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  border: 2px solid #000;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #ffd36e, #ff5e62);
+  color: #0b0a12;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.upload-hint { color: #a99fc2; font-size: 10px; font-weight: 600; }
+.visually-hidden-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 button {
   font: inherit;

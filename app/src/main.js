@@ -3,7 +3,7 @@
 // grain sliders, face-aware auto-recenter, swap/shuffle, undo/redo, one-click recipes, and PNG export
 // at 4 sizes (plus a "download all" button). A `?shot=` query sets up a fixed scene for a
 // deterministic screenshot instead (./shots.js).
-import { drawCover } from './cover.js';
+import { drawCover, buildMosaicPanels } from './cover.js';
 import { LAYOUTS, LAYOUT_IDS, bboxOf, pointInPoly, photoBoxFor } from './layouts.js';
 import { GRADES, GRADE_IDS } from './grades.js';
 import { estimateFaceAnchor, anchorToOffset } from './face-crop.js';
@@ -64,15 +64,16 @@ const state = {
   size: 'widescreen',
   title: 'SUNSET PALMS',
   subtitle: 'Leonida Nights',
+  tagline: 'EVERY COAST HAS A PRICE',
   grade: 'vice-sunset',
   inkEnabled: true,
-  inkStrength: 0.6,
-  posterizeLevels: 6,
+  inkStrength: 0.3,
+  posterizeLevels: 10,
   grain: 0.25,
   heat: 5,
   sealText: 'SUNSET PALMS EDITION',
   reviewText: '★★★★★ "The boldest coast in Leonida" — Vice Weekly',
-  billingText: 'SUNSET PALMS STUDIOS PRESENTS · A LEONIDA NIGHTS PRODUCTION · ORIGINAL KEY ART',
+  billingText: 'A LEONIDA NIGHTS PRODUCTION · ORIGINAL KEY ART',
   showCallouts: true,
   showHeat: true,
   showSeal: true,
@@ -130,7 +131,7 @@ function redraw() {
  * estimateFaceAnchor/anchorToOffset so headroom math accounts for how tightly this panel actually
  * crops a photo (rather than guessing with a flat constant). */
 function panelBox(index) {
-  const panels = LAYOUTS[state.layout].build(canvas.width, canvas.height);
+  const panels = buildMosaicPanels(state.layout, canvas.width, canvas.height);
   const panel = panels[index];
   return panel ? photoBoxFor(panel) : null;
 }
@@ -331,7 +332,7 @@ canvas.addEventListener('drop', async (e) => {
   if (files.length === 0) return;
   snapshot();
   const { x, y } = canvasPoint(e);
-  const panels = LAYOUTS[state.layout].build(canvas.width, canvas.height);
+  const panels = buildMosaicPanels(state.layout, canvas.width, canvas.height);
   const hit = panels.find((p) => pointInPoly(p.poly, x, y));
   await loadFilesIntoPanels(files, hit ? hit.id : 0);
   redraw();
@@ -439,7 +440,7 @@ let dragOrigin = null;
 
 canvas.addEventListener('mousedown', (evt) => {
   const { x, y } = canvasPoint(evt);
-  const panels = LAYOUTS[state.layout].build(canvas.width, canvas.height);
+  const panels = buildMosaicPanels(state.layout, canvas.width, canvas.height);
   const hit = panels.find((p) => pointInPoly(p.poly, x, y));
   if (!hit) return;
   state.selectedPanel = hit.id;
@@ -475,7 +476,7 @@ window.addEventListener('mouseup', () => {
 
 canvas.addEventListener('wheel', (evt) => {
   const { x, y } = canvasPoint(evt);
-  const panels = LAYOUTS[state.layout].build(canvas.width, canvas.height);
+  const panels = buildMosaicPanels(state.layout, canvas.width, canvas.height);
   const hit = panels.find((p) => pointInPoly(p.poly, x, y));
   if (!hit) return;
   evt.preventDefault();
