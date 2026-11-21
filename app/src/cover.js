@@ -4,7 +4,7 @@
 // shared by the live editor preview and the full-resolution PNG export, so what you see is what you
 // export. Pass { exportMode: true } (or render in ?shot=cover mode) to suppress the selection outline.
 
-import { LAYOUTS, bboxOf, borderFor, centroidOf, photoBoxFor } from './layouts.js';
+import { LAYOUTS, bboxOf, borderFor, photoBoxFor } from './layouts.js';
 import { GRADES, applyGrade, paintSkyBloom } from './grades.js';
 import { applyPosterInk } from './posterize.js';
 import { drawTitle, drawSubtitle, drawCalloutTag, drawHeatBar, drawSeal, drawReviewStrip, drawBillingBlock } from './typography.js';
@@ -185,11 +185,19 @@ export function drawCover(canvas, state, options = {}) {
       ctx.fillRect(box.x - 4, box.y - 4, box.w + 8, box.h + 8);
     }
     const pbox = photoBoxFor(panel);
+    // For slanted parallelogram panels, photoBoxFor's inset is the largest axis-aligned rectangle that
+    // fits fully *inside* the diagonal cuts — safe for face-anchor math, but drawing the photo only into
+    // that narrower rect leaves the sliver between it and the panel's own slanted edges unpainted,
+    // which read as a stray vertical seam line next to the polygon clip. Painting the wider bbox instead
+    // is safe here: drawImage/fillRect still respect the active polygon clip, so nothing escapes this
+    // panel's own wedge — it's only getImageData/putImageData (used by grade + ink below) that ignore
+    // clipping and must stay confined to the narrower, neighbor-safe `pbox`.
+    const drawBox = (panel.leftSlant || panel.rightSlant) ? box : pbox;
 
     if (panState.img) {
-      drawPhoto(ctx, panState.img, pbox.x, pbox.y, pbox.w, pbox.h, panState);
+      drawPhoto(ctx, panState.img, drawBox.x, drawBox.y, drawBox.w, drawBox.h, panState);
     } else {
-      drawProcedural(ctx, pbox.x, pbox.y, pbox.w, pbox.h, index);
+      drawProcedural(ctx, drawBox.x, drawBox.y, drawBox.w, drawBox.h, index);
     }
     applyGrade(ctx, pbox.x, pbox.y, pbox.w, pbox.h, gradeId, panState.gradeStrength ?? 0.42);
     if (inkEnabled) applyPosterInk(ctx, pbox.x, pbox.y, pbox.w, pbox.h, { inkStrength, posterizeLevels, grain });
@@ -237,13 +245,32 @@ export function drawCover(canvas, state, options = {}) {
   if (state.skyBloom !== false) paintSkyBloom(ctx, w, h, state.grade ?? state.panels[0]?.grade ?? 'vice-sunset');
 
   if (state.showCallouts !== false) {
+    // Every callout tag is pinned to the bottom-left corner of its own panel, inset by a fixed margin —
+    // never the top (where the critic review strip and edition seal both live) and never low enough to
+    // collide with the title block's actual rendered glyphs (which rise well above its gradient band —
+    // see titleSafeTop) or the heat bar, both of which sit flush to the overall canvas's bottom edge.
+    // Clamp each tag's y upward, clearing whichever of those it would overlap.
+    const inset = Math.max(10, shortSide * 0.012);
+    const safeTop = titleSafeTop(w, h, state);
+    const showHeatBar = state.showHeat !== false;
+    const starSize = shortSide * 0.05;
+    const heatCx = shortSide * 0.045, heatCy = h - shortSide * 0.055;
+    const heatLeft = heatCx - starSize * 0.5;
+    const heatRight = heatCx + starSize * 1.08 * 4 + starSize * 0.6;
+    const heatTop = heatCy - starSize * 0.7;
+
     panels.forEach((panel, index) => {
       if (!panel.label) return;
       const text = state.panels[index]?.label || panel.label;
-      const c = centroidOf(panel.poly);
       const box = bboxOf(panel.poly);
-      const anchorY = panel.frame === 'polaroid' ? box.y + box.h * 0.84 : box.y + box.h * 0.14;
-      drawCalloutTag(ctx, c.x, anchorY, text, panel.angle ?? -0.07);
+      const tagX = box.x + inset;
+      let tagY = box.y + box.h - inset;
+      if (Number.isFinite(safeTop)) tagY = Math.min(tagY, safeTop - inset);
+      if (showHeatBar && box.x < heatRight && box.x + box.w > heatLeft) {
+        tagY = Math.min(tagY, heatTop - inset);
+      }
+      tagY = Math.max(tagY, box.y + inset + 20); // never climb above its own panel's top edge
+      drawCalloutTag(ctx, tagX, tagY, text, panel.angle ?? -0.07);
     });
   }
 
@@ -256,6 +283,24 @@ export function drawCover(canvas, state, options = {}) {
   if (state.showBilling !== false && state.billingText) drawBillingBlock(ctx, w, h, state.billingText);
 
   ctx.restore();
+}
+
+/** How far the bottom title block's actual rendered glyphs reach above the canvas bottom — the Anton
+ * title's ascenders (plus its drop shadow) rise well above its own semi-transparent gradient band, so
+ * panel callout tags need to clear THIS line, not just the band's nominal top edge. Returns Infinity
+ * when no title/subtitle is set (nothing to clear). Mirrors drawTitleBlock's own baselineY/size math. */
+function titleSafeTop(w, h, state) {
+  const title = (state.title ?? '').trim();
+  const subtitle = (state.subtitle ?? '').trim();
+  if (!title && !subtitle) return Infinity;
+  const bandH = h * (subtitle ? 0.24 : 0.16);
+  const clearance = h * 0.0278;
+  if (title) {
+    const baselineY = h - bandH * (subtitle ? 0.58 : 0.4) - clearance;
+    return baselineY - h * 0.13 * 0.95; // Anton ascent (~0.78 of size) plus a safety margin
+  }
+  const subY = h - bandH * 0.16 - clearance;
+  return subY - h * 0.05 * 1.3; // Pacifico's glow + ascent, centered on subY
 }
 
 function drawTitleBlock(ctx, w, h, state) {
@@ -272,10 +317,14 @@ function drawTitleBlock(ctx, w, h, state) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, bandY, w, bandH);
 
+  // Lift both lines a touch off the very bottom edge so Leonida Nights' descenders get clean dark
+  // breathing room above the billing credits line instead of touching it (proportional to canvas size,
+  // ~20px at a 720-tall preview).
+  const clearance = h * 0.0278;
   if (title) {
     drawTitle(ctx, w, h, title, {
       cx: w / 2,
-      baselineY: h - bandH * (subtitle ? 0.58 : 0.4),
+      baselineY: h - bandH * (subtitle ? 0.58 : 0.4) - clearance,
       maxWidth: w * 0.9,
       size: h * 0.13,
     });
@@ -283,7 +332,7 @@ function drawTitleBlock(ctx, w, h, state) {
   if (subtitle) {
     drawSubtitle(ctx, w, h, subtitle, {
       cx: w / 2,
-      y: h - bandH * 0.16,
+      y: h - bandH * 0.16 - clearance,
       maxWidth: w * 0.75,
       size: h * 0.05,
     });

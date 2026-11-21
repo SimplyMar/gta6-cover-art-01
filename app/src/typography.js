@@ -125,17 +125,20 @@ export function drawSubtitle(ctx, w, h, text, { cx, y, maxWidth, size, tilt = -0
   ctx.restore();
 }
 
-/** An angled comic role/location callout tag (e.g. "CHOPPER 1"), Bebas Neue on a tilted ink ribbon. */
+/** An angled comic role/location callout tag (e.g. "CHOPPER 1"), Bebas Neue on a tilted ink ribbon.
+ * `(x, y)` is the tag's BOTTOM-LEFT anchor point (before rotation) — callers always pin these to the
+ * bottom-left corner of a panel so tags never climb into the top-of-frame review strip / edition seal. */
 export function drawCalloutTag(ctx, x, y, text, angle = -0.08) {
   const str = (text ?? '').trim().toUpperCase();
   if (!str) return;
   ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
   ctx.font = `400 ${Math.max(14, Math.min(26, 20))}px 'Bebas Neue'`;
   const padX = 12, padY = 6;
   const tw = ctx.measureText(str).width;
   const bw = tw + padX * 2, bh = 26;
+  // Translate so the tag's own bottom-left corner lands at (x, y), then rotate about its center.
+  ctx.translate(x + bw / 2, y - bh / 2);
+  ctx.rotate(angle);
   ctx.fillStyle = 'rgba(5,4,10,0.86)';
   ctx.strokeStyle = '#ffd36e';
   ctx.lineWidth = 2;
@@ -150,18 +153,18 @@ export function drawCalloutTag(ctx, x, y, text, angle = -0.08) {
   ctx.restore();
 }
 
-/** A 5-star heat/wanted-level bar, bold ink stars with a warm gradient fill. */
+/** A 5-star heat/wanted-level bar: active stars glow luminous gold, inactive stars stay dim ink. */
 export function drawHeatBar(ctx, x, y, starSize, heat = 5) {
   ctx.save();
   ctx.translate(x, y);
   for (let i = 0; i < 5; i++) {
     const sx = i * starSize * 1.08;
-    drawStar(ctx, sx, 0, starSize * 0.46, i < heat ? '#ffcf3f' : 'rgba(255,255,255,0.14)');
+    drawStar(ctx, sx, 0, starSize * 0.46, i < heat);
   }
   ctx.restore();
 }
 
-function drawStar(ctx, cx, cy, r, fill) {
+function drawStar(ctx, cx, cy, r, active) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.beginPath();
@@ -174,8 +177,21 @@ function drawStar(ctx, cx, cy, r, fill) {
     ctx.lineTo(ix, iy);
   }
   ctx.closePath();
-  ctx.fillStyle = fill;
+  if (active) {
+    // Bright luminous gold fill with a warm amber outer glow.
+    ctx.shadowColor = 'rgba(255,183,59,0.95)';
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = '#ffd54f';
+  } else {
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  }
   ctx.fill();
+  // Re-fill once more so the glow-softened gold reads fully opaque and luminous, not washed out.
+  if (active) ctx.fill();
+  // Crisp dark ink outline, drawn after the glow is cleared so the stroke itself stays sharp.
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
   ctx.lineWidth = Math.max(1, r * 0.18);
   ctx.strokeStyle = '#000';
   ctx.stroke();
