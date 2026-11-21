@@ -31,19 +31,34 @@ function vice6(w, h) {
   ];
 }
 
-/** slanted5 — dynamic diagonal comic wedges: 5 tilted parallelogram strips with angled ink dividers. */
+/** slanted5 — dynamic diagonal comic wedges: 5 tilted parallelogram strips with angled ink dividers.
+ * The wedge angle at each internal seam is capped to a fraction of whichever neighboring panel is
+ * narrower (rather than one fixed slant for every seam) so a centered subject in a narrow panel never
+ * loses most of its width to the diagonal cut — a fixed w*0.1 slant could exceed half the width of the
+ * narrowest panels here, clipping faces at the slanted edges. */
 function slanted5(w, h) {
-  const slant = w * 0.1;
   const b = [0, 0.18, 0.4, 0.62, 0.82, 1].map((f) => f * w);
   const labels = ['SUNSET', 'BOULEVARD', 'HEAT', 'NIGHT RUN', 'OCEAN DR'];
+  const widths = [];
+  for (let i = 0; i < 5; i++) widths.push(b[i + 1] - b[i]);
+  // One slant value per internal seam (4 of them), shared by both panels that meet there so the seam
+  // stays flush, capped so it never eats more than ~22% of the narrower neighbor's own width.
+  const seamSlant = [];
+  for (let i = 0; i < 4; i++) seamSlant.push(Math.min(w * 0.1, Math.min(widths[i], widths[i + 1]) * 0.22));
   return b.slice(0, 5).map((x0, i) => {
     const x1 = b[i + 1];
-    const topL = i === 0 ? 0 : x0 + slant;
-    const botR = i === 4 ? w : x1 - slant;
+    const leftSlant = i === 0 ? 0 : seamSlant[i - 1];
+    const rightSlant = i === 4 ? 0 : seamSlant[i];
+    const topL = x0 + leftSlant;
+    const topR = x1 + rightSlant;
+    const botR = x1 - rightSlant;
+    const botL = x0 - leftSlant;
     return {
       id: i,
-      poly: [[topL, 0], [x1 + slant, 0], [botR, h], [x0 - slant, h]],
+      poly: [[topL, 0], [topR, 0], [botR, h], [botL, h]],
       frame: 'ink',
+      leftSlant,
+      rightSlant,
       label: labels[i],
     };
   });
@@ -134,6 +149,28 @@ export function pointInPoly(poly, x, y) {
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+/**
+ * The safe drawable sub-box inside a panel's bounding box used for the actual photo — insets for the
+ * polaroid card border, and for slanted parallelogram panels pulls in from both diagonal-cut edges by
+ * exactly the inscribed-rectangle amount (2x each panel's own leftSlant/rightSlant) so a photo
+ * positioned and face-anchored against THIS box is guaranteed to still be fully inside the panel after
+ * the polygon clip removes the slanted wedges. cover.js and face-crop-aware callers in main.js both use
+ * this so the photo draw and the face-anchor math always agree on the same usable area.
+ */
+export function photoBoxFor(panel) {
+  const box = bboxOf(panel.poly);
+  if (panel.frame === 'polaroid') {
+    const inset = Math.min(box.w, box.h) * 0.06;
+    return { x: box.x + inset, y: box.y + inset * 0.6, w: box.w - inset * 2, h: box.h - inset * 1.9 };
+  }
+  if (panel.leftSlant || panel.rightSlant) {
+    const l = (panel.leftSlant ?? 0) * 2;
+    const r = (panel.rightSlant ?? 0) * 2;
+    return { x: box.x + l, y: box.y, w: Math.max(1, box.w - l - r), h: box.h };
+  }
+  return box;
 }
 
 /** Asymmetric border weight per panel index, scaled to the canvas's shortest side. */

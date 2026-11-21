@@ -4,7 +4,7 @@
 // at 4 sizes (plus a "download all" button). A `?shot=` query sets up a fixed scene for a
 // deterministic screenshot instead (./shots.js).
 import { drawCover } from './cover.js';
-import { LAYOUTS, LAYOUT_IDS, bboxOf, pointInPoly } from './layouts.js';
+import { LAYOUTS, LAYOUT_IDS, bboxOf, pointInPoly, photoBoxFor } from './layouts.js';
 import { GRADES, GRADE_IDS } from './grades.js';
 import { estimateFaceAnchor, anchorToOffset } from './face-crop.js';
 import { createHistory, RECIPES, RECIPE_IDS } from './history.js';
@@ -126,6 +126,15 @@ function redraw() {
   drawCover(canvas, state);
 }
 
+/** The current safe-draw box for panel `index`, for passing real cover-fit geometry into
+ * estimateFaceAnchor/anchorToOffset so headroom math accounts for how tightly this panel actually
+ * crops a photo (rather than guessing with a flat constant). */
+function panelBox(index) {
+  const panels = LAYOUTS[state.layout].build(canvas.width, canvas.height);
+  const panel = panels[index];
+  return panel ? photoBoxFor(panel) : null;
+}
+
 function snapshot() {
   history.record(state);
 }
@@ -226,7 +235,7 @@ recenterBtn.addEventListener('click', () => {
   if (!panel.img) { status.textContent = 'Load a photo into this panel first.'; return; }
   snapshot();
   const anchor = estimateFaceAnchor(panel.img);
-  const { offsetX, offsetY } = anchorToOffset(anchor);
+  const { offsetX, offsetY } = anchorToOffset(anchor, panelBox(state.selectedPanel), panel.img);
   panel.offsetX = offsetX;
   panel.offsetY = offsetY;
   panXSlider.value = offsetX;
@@ -262,7 +271,7 @@ autoFillBtn.addEventListener('click', async () => {
     const img = await loadImage(`samples/${name}.jpg`);
     state.panels[i].img = img;
     const anchor = estimateFaceAnchor(img);
-    const { offsetX, offsetY } = anchorToOffset(anchor);
+    const { offsetX, offsetY } = anchorToOffset(anchor, panelBox(i), img);
     state.panels[i].offsetX = offsetX;
     state.panels[i].offsetY = offsetY;
   }
@@ -288,7 +297,7 @@ sampleThumbs.addEventListener('click', async (e) => {
   const panel = state.panels[state.selectedPanel];
   panel.img = img;
   const anchor = estimateFaceAnchor(img);
-  const offs = anchorToOffset(anchor);
+  const offs = anchorToOffset(anchor, panelBox(state.selectedPanel), img);
   panel.offsetX = offs.offsetX;
   panel.offsetY = offs.offsetY;
   panXSlider.value = panel.offsetX;
@@ -303,7 +312,7 @@ async function loadFilesIntoPanels(files, startIndex) {
     const index = (startIndex + i) % n;
     const img = await loadImage(URL.createObjectURL(files[i]));
     const anchor = estimateFaceAnchor(img);
-    const offs = anchorToOffset(anchor);
+    const offs = anchorToOffset(anchor, panelBox(index), img);
     state.panels[index].img = img;
     state.panels[index].offsetX = offs.offsetX;
     state.panels[index].offsetY = offs.offsetY;
@@ -499,7 +508,7 @@ async function applyShotConfig(cfg) {
     const img = await loadImage(`samples/${cfg.sampleNames[i % cfg.sampleNames.length]}.jpg`);
     panel.img = img;
     const anchor = estimateFaceAnchor(img);
-    const offs = anchorToOffset(anchor);
+    const offs = anchorToOffset(anchor, panelBox(i), img);
     panel.offsetX = offs.offsetX;
     panel.offsetY = offs.offsetY;
   }
@@ -522,9 +531,19 @@ syncControlsFromState();
 
 const shotParam = new URLSearchParams(location.search).get('shot');
 if (shotParam) {
-  runShot(shotParam, new URLSearchParams(location.search), (cfg) => applyShotConfig(cfg).then((exportMode) => {
-    if (exportMode) drawCover(canvas, state, { exportMode: true });
-  }));
+  // `finalize` runs only after shots.js has confirmed every vendored font face (Anton, Bebas Neue,
+  // Pacifico) is actually decoded and ready — not just after the initial applyShotConfig() draw, which
+  // can land before font load finishes and silently fall back to a system font in the captured frame.
+  runShot(
+    shotParam,
+    new URLSearchParams(location.search),
+    (cfg) => applyShotConfig(cfg),
+    (exportMode) => drawCover(canvas, state, { exportMode }),
+  );
 } else {
   redraw();
+  // Safety net for the interactive editor too: the very first redraw() above can land before the
+  // vendored @font-face files finish decoding, which would silently bake in a system-font fallback
+  // until something else triggers a repaint. Re-draw once fonts are confirmed ready.
+  document.fonts.ready.then(() => redraw());
 }

@@ -14,62 +14,88 @@ function fitFont(ctx, text, maxWidth, family, startSize, weight = '400') {
   return size;
 }
 
-/** The massive condensed-uppercase Anton title: sunset-to-chrome gradient fill, retro reflection
- * stripes, thick black ink outline, and a deep offset 3D drop shadow. */
+/** The massive condensed-uppercase Anton title: a solid offset 3D drop shadow drawn directly behind it,
+ * then a sunset-to-chrome gradient fill + retro chrome reflection stripes + thick ink outline built on
+ * an isolated offscreen canvas and composited on top — so the metallic highlight stripes (added with
+ * 'source-atop') can only ever land on pixels this title itself already painted, never bleeding across
+ * the rest of the cover the way compositing straight onto the shared canvas would. */
 export function drawTitle(ctx, w, h, text, { cx, baselineY, maxWidth, size }) {
   const str = (text ?? '').trim().toUpperCase();
   if (!str) return;
   const fitted = fitFont(ctx, str, maxWidth, 'Anton', size);
+
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.font = `400 ${fitted}px 'Anton'`;
 
-  // Deep offset 3D drop shadow: a short stack of darkening offsets behind the letterforms.
+  // Solid offset 3D drop shadow, drawn straight onto the cover canvas BEHIND the title glyph layer —
+  // a short stack of darkening offsets that's meant to show past the letterforms, so it's intentionally
+  // not clipped to the glyph shapes.
   const depth = Math.max(3, fitted * 0.1);
   for (let i = Math.round(depth); i > 0; i--) {
-    ctx.fillStyle = `rgba(10,4,20,${0.14 + i * 0.01})`;
+    ctx.fillStyle = `rgba(8,6,14,${0.4 + i * 0.03})`;
     ctx.fillText(str, cx + i * 0.6, baselineY + i * 0.75);
   }
+  ctx.restore();
 
-  // Thick black ink outline.
-  ctx.lineJoin = 'round';
-  ctx.miterLimit = 2;
-  ctx.lineWidth = fitted * 0.1;
-  ctx.strokeStyle = '#05040a';
-  ctx.strokeText(str, cx, baselineY);
+  // Build the glyph layer on an isolated offscreen canvas. Every composite step below (the gradient
+  // fill, the 'source-atop' chrome stripes) only ever touches pixels THIS canvas already painted, so
+  // the stripes stay strictly inside the letterforms no matter what's already on the main cover canvas.
+  const padX = Math.max(24, fitted * 0.35);
+  const padTop = Math.max(16, fitted * 0.9);
+  const padBottom = Math.max(16, fitted * 0.45);
+  const off = document.createElement('canvas');
+  off.width = Math.ceil(maxWidth + padX * 2);
+  off.height = Math.ceil(fitted + padTop + padBottom);
+  const octx = off.getContext('2d');
+  const ocx = off.width / 2;
+  const obaselineY = off.height - padBottom;
+  octx.textAlign = 'center';
+  octx.textBaseline = 'alphabetic';
+  octx.font = `400 ${fitted}px 'Anton'`;
+
+  // Thick, crisp ink outline.
+  octx.lineJoin = 'round';
+  octx.miterLimit = 2;
+  octx.lineWidth = fitted * 0.1;
+  octx.strokeStyle = '#08060e';
+  octx.strokeText(str, ocx, obaselineY);
 
   // Blazing multi-stop sunset-to-chrome gradient fill.
-  const metrics = ctx.measureText(str);
-  const top = baselineY - (metrics.actualBoundingBoxAscent ?? fitted * 0.78);
-  const grad = ctx.createLinearGradient(0, top, 0, baselineY);
+  const metrics = octx.measureText(str);
+  const top = obaselineY - (metrics.actualBoundingBoxAscent ?? fitted * 0.78);
+  const grad = octx.createLinearGradient(0, top, 0, obaselineY);
   grad.addColorStop(0, '#fff8e3');
   grad.addColorStop(0.18, '#ffe49a');
   grad.addColorStop(0.4, '#ffb14d');
   grad.addColorStop(0.62, '#ff5e62');
   grad.addColorStop(0.82, '#c23a6b');
   grad.addColorStop(1, '#e8ecff');
-  ctx.fillStyle = grad;
-  ctx.fillText(str, cx, baselineY);
+  octx.fillStyle = grad;
+  octx.fillText(str, ocx, obaselineY);
 
-  // Retro horizontal reflection stripes, clipped to the glyph shapes.
-  ctx.save();
-  ctx.globalCompositeOperation = 'source-atop';
+  // Retro horizontal chrome highlight stripes, composited with 'source-atop' onto THIS offscreen
+  // canvas's own glyph pixels only — never the shared cover canvas — so they can't extend past the
+  // letterforms.
+  octx.save();
+  octx.globalCompositeOperation = 'source-atop';
   const stripeH = Math.max(2, fitted * 0.05);
-  ctx.fillStyle = 'rgba(255,255,255,0.22)';
-  for (let y = top; y < baselineY + fitted * 0.1; y += stripeH * 2.1) {
-    ctx.fillRect(cx - maxWidth, y, maxWidth * 2, stripeH);
+  octx.fillStyle = 'rgba(255,255,255,0.22)';
+  for (let y = top; y < obaselineY + fitted * 0.1; y += stripeH * 2.1) {
+    octx.fillRect(0, y, off.width, stripeH);
   }
-  ctx.globalCompositeOperation = 'source-atop';
-  ctx.fillStyle = 'rgba(0,0,0,0.12)';
-  ctx.fillText(str, cx, baselineY); // re-darken outline edges the stripes brightened
-  ctx.restore();
+  octx.fillStyle = 'rgba(0,0,0,0.12)';
+  octx.fillText(str, ocx, obaselineY); // re-darken outline edges the stripes brightened
+  octx.restore();
 
   // Re-stroke a hairline on top so the outline stays crisp after the stripe pass.
-  ctx.lineWidth = Math.max(1, fitted * 0.012);
-  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-  ctx.strokeText(str, cx, baselineY);
-  ctx.restore();
+  octx.lineWidth = Math.max(1, fitted * 0.012);
+  octx.strokeStyle = 'rgba(0,0,0,0.5)';
+  octx.strokeText(str, ocx, obaselineY);
+
+  // Composite the finished, strictly glyph-clipped title layer onto the cover canvas.
+  ctx.drawImage(off, cx - ocx, baselineY - obaselineY);
   return fitted;
 }
 
@@ -156,12 +182,15 @@ function drawStar(ctx, cx, cy, r, fill) {
   ctx.restore();
 }
 
-/** A corner "Edition Seal" ribbon/badge (e.g. "SUNSET PALMS EDITION"). */
+/** A corner "Edition Seal" ribbon/badge (e.g. "SUNSET PALMS EDITION"). Sized and tucked tight into the
+ * very corner (not just scaled off the short side) — the top-right panel of every fixed layout is a
+ * photo panel with a face anchored with generous headroom near its top edge, so an oversized or
+ * loosely-inset seal here reads as the badge "cutting off" that face's head. */
 export function drawSeal(ctx, w, h, text) {
   const str = (text ?? '').trim().toUpperCase();
   if (!str) return;
-  const r = Math.min(w, h) * 0.085;
-  const cx = w - r * 1.3, cy = r * 1.3;
+  const r = Math.min(w, h) * 0.062;
+  const cx = w - r * 1.08, cy = r * 1.08;
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(-0.14);

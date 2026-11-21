@@ -4,7 +4,7 @@
 // shared by the live editor preview and the full-resolution PNG export, so what you see is what you
 // export. Pass { exportMode: true } (or render in ?shot=cover mode) to suppress the selection outline.
 
-import { LAYOUTS, bboxOf, borderFor, centroidOf } from './layouts.js';
+import { LAYOUTS, bboxOf, borderFor, centroidOf, photoBoxFor } from './layouts.js';
 import { GRADES, applyGrade, paintSkyBloom } from './grades.js';
 import { applyPosterInk } from './posterize.js';
 import { drawTitle, drawSubtitle, drawCalloutTag, drawHeatBar, drawSeal, drawReviewStrip, drawBillingBlock } from './typography.js';
@@ -184,8 +184,7 @@ export function drawCover(canvas, state, options = {}) {
       ctx.fillStyle = '#f7f4ec';
       ctx.fillRect(box.x - 4, box.y - 4, box.w + 8, box.h + 8);
     }
-    const inset = panel.frame === 'polaroid' ? Math.min(box.w, box.h) * 0.06 : 0;
-    const pbox = { x: box.x + inset, y: box.y + inset * 0.6, w: box.w - inset * 2, h: box.h - inset * 1.9 };
+    const pbox = photoBoxFor(panel);
 
     if (panState.img) {
       drawPhoto(ctx, panState.img, pbox.x, pbox.y, pbox.w, pbox.h, panState);
