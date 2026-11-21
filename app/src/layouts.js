@@ -23,10 +23,10 @@ function vice6(w, h) {
   const r = (x0, y0, x1, y1) => rect(x0 * w, y0 * h, x1 * w, y1 * h);
   return [
     { id: 0, ...r(0, 0, c1, 0.30), label: 'CHOPPER 1' },
-    { id: 1, ...r(0, 0.30, c1, 1), label: 'LEONIDA' },
+    { id: 1, ...r(0, 0.30, c1, 1), label: 'HEAT LEVEL' },
     { id: 2, ...r(c1, 0, c2, 0.56), label: 'OCEAN DR' },
-    { id: 3, ...r(c1, 0.56, c2, 1), label: 'NIGHT SHIFT' },
-    { id: 4, ...r(c2, 0, 1, 0.40), label: 'HEAT LEVEL' },
+    { id: 3, ...r(c1, 0.56, c2, 1), label: 'LEONIDA' },
+    { id: 4, ...r(c2, 0, 1, 0.40), label: 'NIGHT SHIFT' },
     { id: 5, ...r(c2, 0.40, 1, 1), label: 'VICE SQUAD' },
   ];
 }

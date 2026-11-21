@@ -62,37 +62,37 @@ export function drawTitle(ctx, w, h, text, { cx, baselineY, maxWidth, size }) {
   octx.strokeStyle = '#08060e';
   octx.strokeText(str, ocx, obaselineY);
 
-  // Blazing multi-stop sunset-to-chrome gradient fill.
+  // Sleek 80s Vice-City "chrome horizon" fill: blazing cream-to-gold upper half, a crisp thin white
+  // specular band riding the midline, a vibrant coral-magenta lower half, and a cool pale-cyan rim
+  // bounce right at the very bottom edge — one continuous gradient read as a polished chrome bar
+  // catching a sunset, rather than the old repeating dark scanline stripes.
   const metrics = octx.measureText(str);
   const top = obaselineY - (metrics.actualBoundingBoxAscent ?? fitted * 0.78);
   const grad = octx.createLinearGradient(0, top, 0, obaselineY);
   grad.addColorStop(0, '#fff8e3');
-  grad.addColorStop(0.18, '#ffe49a');
-  grad.addColorStop(0.4, '#ffb14d');
-  grad.addColorStop(0.62, '#ff5e62');
-  grad.addColorStop(0.82, '#c23a6b');
-  grad.addColorStop(1, '#e8ecff');
+  grad.addColorStop(0.16, '#ffe49a');
+  grad.addColorStop(0.36, '#ffc24d');
+  grad.addColorStop(0.48, '#fffdf6'); // crisp specular highlight band across the midline
+  grad.addColorStop(0.53, '#ffffff');
+  grad.addColorStop(0.6, '#ff8f6b');
+  grad.addColorStop(0.78, '#ff5e8a');
+  grad.addColorStop(0.92, '#c23a6b');
+  grad.addColorStop(1, '#bfe9ff'); // cool pale-cyan bottom rim bounce
   octx.fillStyle = grad;
   octx.fillText(str, ocx, obaselineY);
 
-  // Retro horizontal chrome highlight stripes, composited with 'source-atop' onto THIS offscreen
-  // canvas's own glyph pixels only — never the shared cover canvas — so they can't extend past the
-  // letterforms.
-  octx.save();
-  octx.globalCompositeOperation = 'source-atop';
-  const stripeH = Math.max(2, fitted * 0.05);
-  octx.fillStyle = 'rgba(255,255,255,0.22)';
-  for (let y = top; y < obaselineY + fitted * 0.1; y += stripeH * 2.1) {
-    octx.fillRect(0, y, off.width, stripeH);
-  }
-  octx.fillStyle = 'rgba(0,0,0,0.12)';
-  octx.fillText(str, ocx, obaselineY); // re-darken outline edges the stripes brightened
-  octx.restore();
-
-  // Re-stroke a hairline on top so the outline stays crisp after the stripe pass.
+  // Re-stroke a hairline ink outline on top so it stays crisp after the gradient pass, plus a subtle
+  // outer glow composited onto the shared cover canvas (never the offscreen glyph layer) so it reads
+  // as a soft halo around the whole chrome bar instead of bleeding color onto the letterforms.
   octx.lineWidth = Math.max(1, fitted * 0.012);
   octx.strokeStyle = 'rgba(0,0,0,0.5)';
   octx.strokeText(str, ocx, obaselineY);
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,170,90,0.55)';
+  ctx.shadowBlur = Math.max(6, fitted * 0.14);
+  ctx.drawImage(off, cx - ocx, baselineY - obaselineY);
+  ctx.restore();
 
   // Composite the finished, strictly glyph-clipped title layer onto the cover canvas.
   ctx.drawImage(off, cx - ocx, baselineY - obaselineY);
@@ -247,20 +247,30 @@ export function drawSeal(ctx, w, h, text) {
   ctx.restore();
 }
 
-/** A compact critic review strip ("★★★★★ ... — Publication"). */
+/** A compact critic review strip ("★★★★★ ... — Publication"), sized to fit its own measured text
+ * (plus padding, capped at `maxWidth`) rather than stretched to fill the caller's whole box — so it
+ * never spans across panel gutters — with a crisp gold left accent bar. */
 export function drawReviewStrip(ctx, x, y, maxWidth, text) {
   const str = (text ?? '').trim();
   if (!str) return;
   ctx.save();
-  const h = Math.max(20, maxWidth * 0.045);
-  ctx.fillStyle = 'rgba(5,4,10,0.72)';
-  ctx.fillRect(x, y, maxWidth, h);
-  ctx.fillStyle = '#ffe9b0';
-  const size = fitFont(ctx, str, maxWidth - 24, 'Bebas Neue', h * 0.6);
+  const accentW = 5;
+  const padL = 14, padR = 16;
+  const h = Math.max(20, maxWidth * 0.1, 30);
+  const size = fitFont(ctx, str, maxWidth - accentW - padL - padR, 'Bebas Neue', h * 0.6);
   ctx.font = `400 ${size}px 'Bebas Neue'`;
+  const textW = ctx.measureText(str).width;
+  const stripW = Math.min(maxWidth, accentW + padL + textW + padR);
+
+  ctx.fillStyle = 'rgba(5,4,10,0.76)';
+  ctx.fillRect(x, y, stripW, h);
+  ctx.fillStyle = '#ffd36e';
+  ctx.fillRect(x, y, accentW, h);
+
+  ctx.fillStyle = '#ffe9b0';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(str, x + 12, y + h / 2 + 1);
+  ctx.fillText(str, x + accentW + padL, y + h / 2 + 1);
   ctx.restore();
 }
 

@@ -17,7 +17,7 @@ const SIZES = {
   story: { label: '1080 x 1920 Story', w: 1080, h: 1920 },
 };
 
-const SAMPLES = ['chopper-bay', 'coast-cruiser', 'neon-street', 'rooftop', 'boulevard', 'pier'];
+const SAMPLES = ['chopper-bay', 'boulevard', 'neon-street', 'coast-cruiser', 'rooftop', 'pier'];
 
 const canvas = document.getElementById('cover');
 const layoutSelect = document.getElementById('layout');
@@ -67,7 +67,7 @@ const state = {
   grade: 'vice-sunset',
   inkEnabled: true,
   inkStrength: 0.6,
-  posterizeLevels: 5,
+  posterizeLevels: 6,
   grain: 0.25,
   heat: 5,
   sealText: 'SUNSET PALMS EDITION',
@@ -235,7 +235,7 @@ recenterBtn.addEventListener('click', () => {
   if (!panel.img) { status.textContent = 'Load a photo into this panel first.'; return; }
   snapshot();
   const anchor = estimateFaceAnchor(panel.img);
-  const { offsetX, offsetY } = anchorToOffset(anchor, panelBox(state.selectedPanel), panel.img);
+  const { offsetX, offsetY } = anchorToOffset(anchor, panelBox(state.selectedPanel), panel.img, { canvasH: canvas.height });
   panel.offsetX = offsetX;
   panel.offsetY = offsetY;
   panXSlider.value = offsetX;
@@ -271,7 +271,7 @@ autoFillBtn.addEventListener('click', async () => {
     const img = await loadImage(`samples/${name}.jpg`);
     state.panels[i].img = img;
     const anchor = estimateFaceAnchor(img);
-    const { offsetX, offsetY } = anchorToOffset(anchor, panelBox(i), img);
+    const { offsetX, offsetY } = anchorToOffset(anchor, panelBox(i), img, { canvasH: canvas.height });
     state.panels[i].offsetX = offsetX;
     state.panels[i].offsetY = offsetY;
   }
@@ -508,7 +508,7 @@ async function applyShotConfig(cfg) {
     const img = await loadImage(`samples/${cfg.sampleNames[i % cfg.sampleNames.length]}.jpg`);
     panel.img = img;
     const anchor = estimateFaceAnchor(img);
-    const offs = anchorToOffset(anchor, panelBox(i), img);
+    const offs = anchorToOffset(anchor, panelBox(i), img, { canvasH: canvas.height });
     panel.offsetX = offs.offsetX;
     panel.offsetY = offs.offsetY;
   }

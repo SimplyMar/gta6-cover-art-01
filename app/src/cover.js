@@ -167,7 +167,7 @@ export function drawCover(canvas, state, options = {}) {
   const layout = LAYOUTS[state.layout] ?? LAYOUTS.classic5;
   const panels = layout.build(w, h);
   const inkStrength = state.inkStrength ?? 0.6;
-  const posterizeLevels = state.posterizeLevels ?? 5;
+  const posterizeLevels = state.posterizeLevels ?? 6;
   const grain = state.grain ?? 0.25;
   const inkEnabled = state.inkEnabled !== false;
 
@@ -185,22 +185,29 @@ export function drawCover(canvas, state, options = {}) {
       ctx.fillRect(box.x - 4, box.y - 4, box.w + 8, box.h + 8);
     }
     const pbox = photoBoxFor(panel);
-    // For slanted parallelogram panels, photoBoxFor's inset is the largest axis-aligned rectangle that
-    // fits fully *inside* the diagonal cuts — safe for face-anchor math, but drawing the photo only into
-    // that narrower rect leaves the sliver between it and the panel's own slanted edges unpainted,
-    // which read as a stray vertical seam line next to the polygon clip. Painting the wider bbox instead
-    // is safe here: drawImage/fillRect still respect the active polygon clip, so nothing escapes this
-    // panel's own wedge — it's only getImageData/putImageData (used by grade + ink below) that ignore
-    // clipping and must stay confined to the narrower, neighbor-safe `pbox`.
-    const drawBox = (panel.leftSlant || panel.rightSlant) ? box : pbox;
+    // Render this panel's art, grade, and Poster Ink onto a dedicated offscreen canvas sized to the
+    // panel's full bbox (`box`), not the narrower inner `pbox`. applyGrade/applyPosterInk read and write
+    // raw pixels via getImageData/putImageData, which ignore the active polygon clip entirely — confining
+    // them to the narrower pbox on a slanted panel left the sliver between pbox and the panel's own
+    // diagonal cut edges completely ungraded and un-inked, which read as a stray vertical seam right next
+    // to the clip. Painting the art and running the full grade + ink pass over the ENTIRE offscreen
+    // canvas, then compositing that single finished layer through the clip, guarantees even coverage all
+    // the way to the slanted seam with nothing escaping into neighboring panels.
+    const off = document.createElement('canvas');
+    off.width = Math.max(1, Math.ceil(box.w));
+    off.height = Math.max(1, Math.ceil(box.h));
+    const octx = off.getContext('2d');
+    const drawBoxSrc = (panel.leftSlant || panel.rightSlant) ? box : pbox;
+    const drawBox = { x: drawBoxSrc.x - box.x, y: drawBoxSrc.y - box.y, w: drawBoxSrc.w, h: drawBoxSrc.h };
 
     if (panState.img) {
-      drawPhoto(ctx, panState.img, drawBox.x, drawBox.y, drawBox.w, drawBox.h, panState);
+      drawPhoto(octx, panState.img, drawBox.x, drawBox.y, drawBox.w, drawBox.h, panState);
     } else {
-      drawProcedural(ctx, drawBox.x, drawBox.y, drawBox.w, drawBox.h, index);
+      drawProcedural(octx, drawBox.x, drawBox.y, drawBox.w, drawBox.h, index);
     }
-    applyGrade(ctx, pbox.x, pbox.y, pbox.w, pbox.h, gradeId, panState.gradeStrength ?? 0.42);
-    if (inkEnabled) applyPosterInk(ctx, pbox.x, pbox.y, pbox.w, pbox.h, { inkStrength, posterizeLevels, grain });
+    applyGrade(octx, 0, 0, off.width, off.height, gradeId, panState.gradeStrength ?? 0.42);
+    if (inkEnabled) applyPosterInk(octx, 0, 0, off.width, off.height, { inkStrength, posterizeLevels, grain });
+    ctx.drawImage(off, box.x, box.y);
     ctx.restore();
 
     if (state.selectedPanel === index && !options.exportMode) {
@@ -274,11 +281,20 @@ export function drawCover(canvas, state, options = {}) {
     });
   }
 
-  if (state.showHeat !== false) drawHeatBar(ctx, shortSide * 0.045, h - shortSide * 0.055, shortSide * 0.05, state.heat ?? 5);
   if (state.showSeal !== false) drawSeal(ctx, w, h, state.sealText ?? 'SUNSET PALMS EDITION');
-  if (state.showReview !== false && state.reviewText) drawReviewStrip(ctx, 0, h * 0.04, w * 0.62, state.reviewText);
+  if (state.showReview !== false && state.reviewText) {
+    // Tucked cleanly inside the top-left panel rather than stretched across the canvas (which used to
+    // cross panel gutters), sized to fit its own measured text instead of a flat 62%-of-canvas guess.
+    const topLeft = bboxOf(panels[0].poly);
+    const stripInset = Math.max(10, shortSide * 0.014);
+    drawReviewStrip(ctx, topLeft.x + stripInset, topLeft.y + stripInset, topLeft.w - stripInset * 2, state.reviewText);
+  }
 
   drawTitleBlock(ctx, w, h, state);
+
+  // Drawn AFTER the title block so the heat bar's luminous gold stars render on top of the bottom title
+  // gradient (which fades to 90% black) instead of being obscured underneath it.
+  if (state.showHeat !== false) drawHeatBar(ctx, shortSide * 0.045, h - shortSide * 0.055, shortSide * 0.05, state.heat ?? 5);
 
   if (state.showBilling !== false && state.billingText) drawBillingBlock(ctx, w, h, state.billingText);
 

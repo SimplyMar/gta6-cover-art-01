@@ -5,7 +5,7 @@
 // (Anton, Bebas Neue, Pacifico) to each report as actually loaded via document.fonts.load() before
 // calling `finalize` — so the frame a capture tool screenshots never silently falls back to a system
 // font while the real @font-face files are still decoding. Only then sets window.__shotReady = true.
-const SAMPLE_NAMES = ['chopper-bay', 'coast-cruiser', 'neon-street', 'rooftop', 'boulevard', 'pier'];
+const SAMPLE_NAMES = ['chopper-bay', 'boulevard', 'neon-street', 'coast-cruiser', 'rooftop', 'pier'];
 
 export async function runShot(shot, query, applyShot, finalize) {
   if (shot === 'cover') document.body.classList.add('shot-cover');
@@ -22,7 +22,7 @@ export async function runShot(shot, query, applyShot, finalize) {
     title: query.get('title') ?? 'SUNSET PALMS',
     subtitle: query.get('subtitle') ?? 'Leonida Nights',
     inkStrength: num('ink', 0.6),
-    posterizeLevels: num('posterize', 5),
+    posterizeLevels: num('posterize', 6),
     grain: num('grain', 0.25),
     exportMode: shot === 'cover',
     sampleNames: SAMPLE_NAMES,

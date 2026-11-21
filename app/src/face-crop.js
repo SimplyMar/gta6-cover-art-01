@@ -110,19 +110,30 @@ export function estimateFaceAnchor(img) {
  * Converts a normalized face anchor {x, y} into the renderer's offsetX/offsetY pan (each in [-1, 1], 0
  * = centered), aiming to land the anchor at HEAD_BAND_TARGET (23% down) inside the panel's frame.
  *
- * `box` is the panel's safe-draw box ({w, h}, from layouts.js's `photoBoxFor`) and `img` is the loaded
- * photo — together these give the real cover-fit aspect ratio, so the correction accounts for how
+ * `box` is the panel's safe-draw box ({x, y, w, h}, from layouts.js's `photoBoxFor`) and `img` is the
+ * loaded photo — together these give the real cover-fit aspect ratio, so the correction accounts for how
  * tightly THIS panel crops the photo instead of guessing with a flat constant. Both are optional; when
  * omitted this falls back to a fixed moderate-crop assumption (still biased hard toward headroom) so
  * every existing call site keeps working.
+ *
+ * `opts.canvasH`, when supplied alongside `box.y`/`box.h` in full canvas pixel space, lets this pull the
+ * target headroom tighter (toward the top of the panel) for a tall/lower panel whose bottom edge reaches
+ * into the bottom portion of the canvas where the title block renders — so a detected face in one of
+ * those panels lands cleanly above the title-safe line instead of merely at the standard 23% headroom,
+ * which can still dip into the title's gradient band on a panel that runs all the way to the bottom edge.
  */
-export function anchorToOffset(anchor, box, img) {
+export function anchorToOffset(anchor, box, img, opts = {}) {
   const offsetX = Math.min(1, Math.max(-1, (anchor.x - 0.5) * 2));
 
   const coverAspect = box && box.w && box.h ? box.w / box.h : null;
   const imgAspect = img && (img.naturalWidth || img.width) && (img.naturalHeight || img.height)
     ? (img.naturalWidth || img.width) / (img.naturalHeight || img.height)
     : null;
+
+  const reachesTitleZone = opts.canvasH && box && Number.isFinite(box.y) && Number.isFinite(box.h)
+    ? (box.y + box.h) / opts.canvasH > 0.78
+    : false;
+  const target = reachesTitleZone ? HEAD_BAND_TARGET * 0.68 : HEAD_BAND_TARGET;
 
   let offsetY;
   if (coverAspect && imgAspect) {
@@ -132,7 +143,7 @@ export function anchorToOffset(anchor, box, img) {
     const r = Math.max(coverAspect / imgAspect, 1);
     const marginFrac = (r - 1) / 2; // (ph - h) / (2h), i.e. maxOffY expressed as a fraction of h
     if (marginFrac > 0.001) {
-      offsetY = (anchor.y * r - marginFrac - HEAD_BAND_TARGET) / marginFrac;
+      offsetY = (anchor.y * r - marginFrac - target) / marginFrac;
     } else {
       offsetY = 0;
     }
